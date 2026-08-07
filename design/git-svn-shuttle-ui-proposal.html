@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
+  <title>Git-SVN Shuttle UI Proposal</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #191919;
+      --surface: #222222;
+      --surface-raised: #2a2a2a;
+      --surface-hover: #323232;
+      --line: #363636;
+      --line-strong: #4a4a4a;
+      --text: #f5f5f5;
+      --text-secondary: #d0d0d0;
+      --text-muted: #b3b3b3;
+      --accent: #72adf7;
+      --accent-strong: #347dcc;
+      --accent-bg: #16283d;
+      --success: #70c894;
+      --warning: #f3c969;
+      --warning-bg: #332b17;
+      --danger: #f48771;
+      --focus: #9cc8ff;
+      --shadow: 0 18px 48px rgba(0,0,0,.42);
+      font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #151515; color: var(--text); }
+    body { display: grid; place-items: center; padding: 28px; }
+    button { font: inherit; }
+    svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    .tool-window {
+      width: min(1120px, calc(100vw - 56px));
+      min-width: 760px;
+      height: min(840px, calc(100vh - 56px));
+      min-height: 650px;
+      display: grid;
+      grid-template-rows: 38px auto 1fr 30px;
+      overflow: hidden;
+      background: var(--bg);
+      border: 1px solid #0a0a0a;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      padding-left: 10px;
+      border-bottom: 1px solid var(--line);
+      background: #232323;
+      font-size: 14px;
+      font-weight: 600;
+      user-select: none;
+    }
+    .titlebar-spacer { flex: 1; }
+    .chrome-button {
+      width: 38px; height: 34px; display: grid; place-items: center;
+      border: 0; background: transparent; color: var(--text-secondary);
+    }
+    .chrome-button:hover { background: var(--surface-hover); color: var(--text); }
+    .chrome-button.close:hover { background: #c42b1c; }
+    .chrome-button svg { width: 17px; height: 17px; }
+
+    .commandbar {
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: #202020;
+      border-bottom: 1px solid var(--line);
+    }
+    .metric {
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border-right: 1px solid var(--line);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .metric svg { color: var(--text-muted); }
+    .metric strong { color: var(--text); font-size: 16px; }
+    .command-spacer { flex: 1; }
+
+    .command, .icon-command {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      background: var(--surface-raised);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background-color .12s ease, border-color .12s ease, transform .08s ease;
+    }
+    .command { padding: 0 12px; font-weight: 600; }
+    .icon-command { width: 36px; padding: 0; }
+    .command:hover, .icon-command:hover { background: var(--surface-hover); border-color: #5f5f5f; }
+    .command:active, .icon-command:active { transform: translateY(1px); }
+    .command:focus-visible, .icon-command:focus-visible, .repo-toggle:focus-visible {
+      outline: 2px solid var(--focus); outline-offset: 1px;
+    }
+    .command.primary { background: var(--accent-strong); border-color: #438edc; color: #fff; }
+    .command.primary:hover { background: #3e87d5; border-color: #5a9be0; }
+    .command.primary svg { width: 22px; height: 22px; }
+    .icon-command.primary { background: var(--accent-strong); border-color: #438edc; color: #fff; }
+    .icon-command:disabled, .command:disabled {
+      color: #8d8d8d; background: #292929; border-color: #484848; cursor: not-allowed;
+    }
+    .count-badge {
+      min-width: 20px; height: 20px; display: inline-grid; place-items: center;
+      padding: 0 6px; border-radius: 10px;
+      background: #e9f3ff; color: #245f9d; font-size: 12px; font-weight: 800;
+    }
+
+    [data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      z-index: 20;
+      left: 50%; top: calc(100% + 7px);
+      transform: translateX(-50%) translateY(-2px);
+      width: max-content; max-width: 270px;
+      padding: 6px 8px;
+      border: 1px solid #757575;
+      background: #2d2d30;
+      color: #fff;
+      font-size: 12px; font-weight: 400; line-height: 1.35;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    [data-tooltip]:hover::after, [data-tooltip]:focus-visible::after {
+      visibility: visible; transform: translateX(-50%) translateY(0);
+    }
+
+    .repository-list { min-height: 0; overflow: auto; padding: 8px; background: #171717; }
+    .repository {
+      overflow: hidden;
+      margin-bottom: 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--bg);
+    }
+    .repository:last-child { margin-bottom: 0; }
+    .repo-header {
+      min-height: 58px;
+      display: grid;
+      grid-template-columns: 32px 24px minmax(0,1fr) auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px 8px 6px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    .repo-toggle {
+      width: 30px; height: 30px; display: grid; place-items: center;
+      border: 0; background: transparent; color: var(--text-secondary); cursor: pointer;
+    }
+    .repo-toggle:hover { background: var(--surface-hover); color: var(--text); }
+    .repo-toggle svg { width: 17px; height: 17px; transition: transform .14s ease; }
+    .repository.collapsed .repo-toggle svg { transform: rotate(-90deg); }
+    .repo-icon { color: var(--text-secondary); }
+    .repo-identity { min-width: 0; }
+    .repo-name { margin: 0; font-size: 14px; font-weight: 700; color: var(--text); }
+    .repo-path { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font: 12px Consolas, monospace; }
+    .repo-state {
+      display: inline-flex; align-items: center; gap: 6px;
+      min-height: 28px; padding: 0 9px;
+      border: 1px solid #5c4d27; background: var(--warning-bg); color: #ffe39c;
+      font-size: 12px; font-weight: 600; white-space: nowrap;
+      border-radius: 5px;
+    }
+    .repo-state svg { width: 16px; height: 16px; }
+    .repo-actions { display: flex; gap: 6px; }
+
+    .repo-content { padding: 10px 10px 12px 62px; background: var(--bg); }
+    .repository.collapsed .repo-content { display: none; }
+    .history {
+      position: relative;
+      border-left: 2px solid #4b4b4b;
+      margin-left: 14px;
+    }
+    .history-row {
+      position: relative;
+      min-height: 46px;
+      display: grid;
+      grid-template-columns: 40px minmax(0,1fr) auto;
+      align-items: center;
+      column-gap: 8px;
+      padding: 5px 10px 5px 12px;
+    }
+    .node {
+      position: absolute; left: -13px; top: 50%; transform: translateY(-50%);
+      width: 24px; height: 24px; display: grid; place-items: center;
+      border: 2px solid var(--line-strong); background: var(--bg); color: var(--text-secondary);
+      border-radius: 50%;
+    }
+    .node svg { width: 14px; height: 14px; stroke-width: 2.3; }
+    .history-row.synced .node { border-color: var(--success); color: var(--success); }
+    .history-row.outgoing .node { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+    .row-icon {
+      width: 32px; height: 32px; display: grid; place-items: center;
+      color: var(--text-secondary);
+    }
+    .row-icon svg { width: 19px; height: 19px; }
+    .commit-main { min-width: 0; }
+    .commit-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 14px; font-weight: 600; }
+    .commit-meta { margin-top: 2px; color: var(--text-secondary); font: 12px Consolas, monospace; }
+    .commit-state {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--text-secondary); font-size: 12px; font-weight: 700; white-space: nowrap;
+    }
+    .commit-state svg { width: 16px; height: 16px; }
+    .history-row.outgoing {
+      margin: 0 0 0 -2px;
+      border-left: 3px solid var(--accent);
+      background: var(--accent-bg);
+      border-radius: 0 5px 5px 0;
+    }
+    .history-row.outgoing .commit-state { color: #9ccaff; }
+
+    .sync-divider {
+      position: relative;
+      height: 20px;
+      margin-left: -2px;
+      border-bottom: 1px solid #4d6f91;
+    }
+    .sync-divider::before {
+      content: "";
+      position: absolute;
+      left: -4px;
+      bottom: -4px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #6f92b8;
+    }
+    .sync-divider-icon {
+      position: absolute;
+      right: 9px;
+      bottom: -12px;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #4d6f91;
+      border-radius: 50%;
+      background: var(--bg);
+      color: #8fb4da;
+    }
+    .sync-divider-icon svg { width: 14px; height: 14px; stroke-width: 2.2; }
+
+    .statusbar {
+      display: flex; align-items: center; gap: 7px;
+      padding: 0 10px; border-top: 1px solid var(--line);
+      background: #202020; color: var(--text-secondary); font-size: 12px;
+    }
+    .statusbar svg { width: 14px; height: 14px; color: var(--success); }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 42px; z-index: 50;
+      transform: translate(-50%, 18px);
+      display: flex; align-items: center; gap: 9px;
+      padding: 10px 13px; border: 1px solid #737373;
+      background: #2d2d30; color: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.4);
+      visibility: hidden;
+    }
+    .toast.show { visibility: visible; transform: translate(-50%, 0); }
+    .toast svg { color: var(--accent); }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 40;
+      display: grid; place-items: center;
+      background: rgba(0,0,0,.58);
+      visibility: hidden;
+    }
+    .modal-backdrop.open { visibility: visible; }
+    .modal {
+      width: min(520px, calc(100vw - 40px));
+      overflow: hidden;
+      border: 1px solid #535353; border-radius: 8px; background: #252525; box-shadow: var(--shadow);
+    }
+    .modal-header { display: flex; align-items: center; gap: 11px; padding: 16px; border-bottom: 1px solid var(--line); }
+    .modal-mark { width: 38px; height: 38px; display: grid; place-items: center; background: var(--accent-bg); color: var(--accent); border: 1px solid #3c73a8; border-radius: 6px; }
+    .modal-mark svg { width: 23px; height: 23px; }
+    .modal-title { margin: 0; font-size: 17px; }
+    .modal-subtitle { margin-top: 3px; color: var(--text-secondary); font-size: 12px; }
+    .modal-body { padding: 12px 16px; }
+    .publish-item { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .publish-item:last-child { border-bottom: 0; }
+    .publish-item svg { width: 18px; height: 18px; color: var(--accent); }
+    .publish-item strong { display: block; font-size: 13px; }
+    .publish-item span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
+    .hash { color: var(--text-secondary); font: 12px Consolas, monospace; }
+    .modal-warning { display: flex; gap: 8px; margin-top: 12px; padding: 9px; background: var(--warning-bg); color: #ffe298; font-size: 12px; line-height: 1.45; }
+    .modal-warning svg { flex: 0 0 auto; width: 17px; height: 17px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px 16px; }
+
+    @media (max-width: 850px) {
+      body { padding: 0; place-items: stretch; }
+      .tool-window { width: 100vw; height: 100vh; min-width: 0; min-height: 600px; }
+      .metric-label, .command-label, .repo-state span { display: none; }
+      .metric { padding: 0 6px; }
+      .command { width: 40px; padding: 0; }
+      .repo-header { grid-template-columns: 32px 24px minmax(0,1fr) auto auto; }
+      .repo-content { padding-left: 42px; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="m12 17 0 5M5 3l14 0-3 5 0 5 2 2H6l2-2V8z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 11M5.5 15A7 7 0 0 0 18 17.5l2-4.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9M7 14l5-5 5 5M4 4h16"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="1"/><rect x="3" y="14" width="18" height="7" rx="1"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></symbol>
+    <symbol id="i-repo" viewBox="0 0 24 24"><path d="M5 4h12a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M8 4v16M8 8h7"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="19" r="2"/><path d="M6 7v10M8 9c5 0 8-1 8-3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4z"/><path d="M12 9v5M12 17.5h.01"/></symbol>
+    <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M3 12h6M15 12h6"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+  </svg>
+
+  <main class="tool-window" aria-label="Git-SVN Shuttle UI 시안">
+    <header class="titlebar">
+      Git-SVN Shuttle
+      <span class="titlebar-spacer"></span>
+      <button class="chrome-button" aria-label="자동 숨김"><svg><use href="#i-chevron"/></svg></button>
+      <button class="chrome-button" aria-label="고정"><svg><use href="#i-pin"/></svg></button>
+      <button class="chrome-button close" aria-label="닫기"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <nav class="commandbar" aria-label="전체 저장소 작업">
+      <div class="metric"><svg><use href="#i-repo"/></svg><strong>2</strong><span class="metric-label">저장소</span></div>
+      <div class="metric"><svg style="color:var(--accent)"><use href="#i-upload"/></svg><strong>2</strong><span class="metric-label">게시 대기</span></div>
+      <span class="command-spacer"></span>
+      <button class="icon-command" id="refresh" data-tooltip="상태 새로 고침" aria-label="상태 새로 고침"><svg><use href="#i-refresh"/></svg></button>
+      <button class="command" data-action="receive-all"><svg><use href="#i-download"/></svg><span class="command-label">모두 받기</span></button>
+      <button class="command primary" data-action="publish" data-scope="all"><svg><use href="#i-upload"/></svg><span class="command-label">SVN에 게시</span><span class="count-badge">2</span></button>
+    </nav>
+
+    <section class="repository-list">
+      <article class="repository" data-repo="ShuttleDemo">
+        <header class="repo-header">
+          <button class="repo-toggle" aria-label="ShuttleDemo 접기"><svg><use href="#i-chevron"/></svg></button>
+          <svg class="repo-icon"><use href="#i-repo"/></svg>
+          <div class="repo-identity">
+            <h2 class="repo-name">ShuttleDemo</h2>
+            <div class="repo-path">C:\Users\semif\AppData\Local\GitSvnShuttle\TestWorkspace\ShuttleDemo</div>
+          </div>
+          <div class="repo-state"><svg><use href="#i-warning"/></svg><span>커밋되지 않은 변경</span></div>
+          <div class="repo-actions">
+            <button class="icon-command" disabled data-tooltip="먼저 변경 파일을 커밋하세요" aria-label="SVN 변경 받기: 먼저 커밋 필요"><svg><use href="#i-download"/></svg></button>
+            <button class="icon-command" disabled data-tooltip="먼저 변경 파일을 커밋하세요" aria-label="SVN에 게시: 먼저 커밋 필요"><svg><use href="#i-upload"/></svg></button>
+          </div>
+        </header>
+        <div class="repo-content">
+          <div class="history">
+            <div class="history-row outgoing">
+              <span class="node"><svg><use href="#i-upload"/></svg></span>
+              <span class="row-icon"><svg><use href="#i-commit"/></svg></span>
+              <div class="commit-main"><div class="commit-title">Update shuttle locally</div><div class="commit-meta">c3d2da9 · Shuttle Tester · 2026-08-07</div></div>
+              <div class="commit-state"><svg><use href="#i-upload"/></svg></div>
+            </div>
+            <div class="sync-divider" aria-label="SVN 동기화 경계">
+              <span class="sync-divider-icon"><svg><use href="#i-server"/></svg></span>
+            </div>
+            <div class="history-row synced">
+              <span class="node"><svg><use href="#i-check"/></svg></span>
+              <span class="row-icon"><svg><use href="#i-server"/></svg></span>
+              <div class="commit-main"><div class="commit-title">Create main project</div><div class="commit-meta">70545ed · SVN r1</div></div>
+              <div class="commit-state"><svg><use href="#i-check"/></svg>SVN</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="repository" data-repo="Common">
+        <header class="repo-header">
+          <button class="repo-toggle" aria-label="Common 접기"><svg><use href="#i-chevron"/></svg></button>
+          <svg class="repo-icon"><use href="#i-repo"/></svg>
+          <div class="repo-identity">
+            <h2 class="repo-name">Common</h2>
+            <div class="repo-path">C:\Users\semif\AppData\Local\GitSvnShuttle\TestWorkspace\ShuttleDemo\Externals\Common</div>
+          </div>
+          <div></div>
+          <div class="repo-actions">
+            <button class="icon-command" data-action="receive" data-tooltip="이 저장소에서 SVN 변경 받기" aria-label="Common SVN 변경 받기"><svg><use href="#i-download"/></svg></button>
+            <button class="icon-command primary" data-action="publish" data-scope="common" data-tooltip="이 커밋을 SVN에 게시" aria-label="Common 커밋 1개 SVN에 게시"><svg><use href="#i-upload"/></svg></button>
+          </div>
+        </header>
+        <div class="repo-content">
+          <div class="history">
+            <div class="history-row outgoing">
+              <span class="node"><svg><use href="#i-upload"/></svg></span>
+              <span class="row-icon"><svg><use href="#i-commit"/></svg></span>
+              <div class="commit-main"><div class="commit-title">Update external locally</div><div class="commit-meta">68a15e9 · Shuttle Tester · 2026-08-07</div></div>
+              <div class="commit-state"><svg><use href="#i-upload"/></svg></div>
+            </div>
+            <div class="sync-divider" aria-label="SVN 동기화 경계">
+              <span class="sync-divider-icon"><svg><use href="#i-server"/></svg></span>
+            </div>
+            <div class="history-row synced">
+              <span class="node"><svg><use href="#i-check"/></svg></span>
+              <span class="row-icon"><svg><use href="#i-server"/></svg></span>
+              <div class="commit-main"><div class="commit-title">Remote external change</div><div class="commit-meta">ed1b015 · SVN r4</div></div>
+              <div class="commit-state"><svg><use href="#i-check"/></svg>SVN</div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="statusbar"><svg><use href="#i-check"/></svg><span id="status">2개 저장소 검사 완료 · 게시할 커밋 2개</span></footer>
+  </main>
+
+  <div class="toast" role="status" aria-live="polite"><svg><use href="#i-info"/></svg><span></span></div>
+
+  <div class="modal-backdrop" id="publish-modal" role="presentation">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-header">
+        <span class="modal-mark"><svg><use href="#i-upload"/></svg></span>
+        <div><h2 class="modal-title" id="modal-title">SVN에 게시</h2><div class="modal-subtitle" id="modal-subtitle">커밋 2개를 아래 순서대로 게시합니다.</div></div>
+      </header>
+      <div class="modal-body">
+        <div id="publish-list"></div>
+        <div class="modal-warning"><svg><use href="#i-warning"/></svg><span>저장소별 게시 작업은 하나의 트랜잭션이 아닙니다. 앞 저장소가 성공한 뒤 다음 저장소가 실패할 수 있습니다.</span></div>
+      </div>
+      <footer class="modal-actions">
+        <button class="command" id="cancel-publish">취소</button>
+        <button class="command primary" id="confirm-publish"><svg><use href="#i-upload"/></svg>게시 시작</button>
+      </footer>
+    </section>
+  </div>
+
+  <script>
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+    const toast = $('.toast');
+    let toastTimer;
+    function showToast(message) {
+      $('span', toast).textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    $$('.repo-toggle').forEach(button => button.addEventListener('click', () => {
+      const repo = button.closest('.repository');
+      repo.classList.toggle('collapsed');
+      const collapsed = repo.classList.contains('collapsed');
+      button.setAttribute('aria-label', `${repo.dataset.repo} ${collapsed ? '펼치기' : '접기'}`);
+    }));
+
+    $('#refresh').addEventListener('click', () => {
+      $('#status').textContent = '방금 상태를 다시 확인했습니다 · 게시할 커밋 2개';
+      showToast('저장소 상태를 새로 읽었습니다.');
+    });
+
+    $$('[data-action="receive"], [data-action="receive-all"]').forEach(button => button.addEventListener('click', () => {
+      showToast(button.dataset.action === 'receive-all' ? '시안: 모든 저장소에서 SVN 변경 받기' : '시안: Common에서 SVN 변경 받기');
+    }));
+
+    const modal = $('#publish-modal');
+    const publishList = $('#publish-list');
+    const allCommits = [
+      { repo: 'ShuttleDemo', subject: 'Update shuttle locally', hash: 'c3d2da9' },
+      { repo: 'Common', subject: 'Update external locally', hash: '68a15e9' }
+    ];
+    function openPublish(scope) {
+      const commits = scope === 'common' ? allCommits.slice(1) : allCommits;
+      $('#modal-subtitle').textContent = `커밋 ${commits.length}개를 아래 순서대로 게시합니다.`;
+      publishList.innerHTML = commits.map(item => `
+        <div class="publish-item">
+          <svg><use href="#i-upload"/></svg>
+          <div><strong>${item.repo}</strong><span>${item.subject}</span></div>
+          <code class="hash">${item.hash}</code>
+        </div>`).join('');
+      modal.classList.add('open');
+      $('#cancel-publish').focus();
+    }
+    $$('[data-action="publish"]').forEach(button => button.addEventListener('click', () => openPublish(button.dataset.scope)));
+    function closePublish() { modal.classList.remove('open'); }
+    $('#cancel-publish').addEventListener('click', closePublish);
+    modal.addEventListener('click', event => { if (event.target === modal) closePublish(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closePublish(); });
+    $('#confirm-publish').addEventListener('click', () => { closePublish(); showToast('시안이므로 실제 dcommit은 실행하지 않습니다.'); });
+  </script>
+</body>
+</html>

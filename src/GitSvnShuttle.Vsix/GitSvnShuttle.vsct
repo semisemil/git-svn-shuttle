@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable">
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="guidGitSvnShuttlePackage">
+    <Groups>
+      <Group guid="guidGitSvnShuttleCommandSet" id="GitSvnShuttleGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      </Group>
+    </Groups>
+    <Buttons>
+      <Button guid="guidGitSvnShuttleCommandSet" id="ShowGitSvnShuttle" priority="0x0100" type="Button">
+        <Parent guid="guidGitSvnShuttleCommandSet" id="GitSvnShuttleGroup" />
+        <Strings>
+          <ButtonText>Git-SVN Shuttle</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidGitSvnShuttlePackage" value="{4879B52A-7FA8-4D1A-8EAE-E96D2940C02E}" />
+    <GuidSymbol name="guidGitSvnShuttleCommandSet" value="{46F6ACDB-AD32-49D8-B38A-EDDFB249B83C}">
+      <IDSymbol name="GitSvnShuttleGroup" value="0x1020" />
+      <IDSymbol name="ShowGitSvnShuttle" value="0x0100" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>

@@ -1,0 +1,14 @@
+.vs/
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.vsix
+!src/GitSvnShuttle.Vsix/
+!src/GitSvnShuttle.Vsix/**
+src/GitSvnShuttle.Vsix/bin/
+src/GitSvnShuttle.Vsix/obj/
+artifacts/
+.test-tools/
+.test-workspace/
