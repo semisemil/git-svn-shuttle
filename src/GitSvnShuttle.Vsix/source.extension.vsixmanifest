@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
   <Metadata>
-    <Identity Id="GitSvnShuttle.VisualStudio" Version="0.3.2" Language="ko-KR" Publisher="semisemil" />
+    <Identity Id="GitSvnShuttle.VisualStudio" Version="0.3.3" Language="ko-KR" Publisher="semisemil" />
     <DisplayName>Git-SVN Shuttle</DisplayName>
-    <Description xml:space="preserve">Visual Studio에서 Git-SVN 저장소의 변경을 받고, SVN에 게시할 로컬 커밋을 미리 확인한 뒤 안전하게 dcommit합니다.</Description>
+    <Description xml:space="preserve">Visual Studio&#xC5D0;&#xC11C; Git-SVN &#xC800;&#xC7A5;&#xC18C;&#xC758; &#xBCC0;&#xACBD;&#xC744; &#xBC1B;&#xACE0;, SVN&#xC5D0; &#xAC8C;&#xC2DC;&#xD560; &#xB85C;&#xCEEC; &#xCEE4;&#xBC0B;&#xC744; &#xBBF8;&#xB9AC; &#xD655;&#xC778;&#xD55C; &#xB4A4; &#xC548;&#xC804;&#xD558;&#xAC8C; dcommit&#xD569;&#xB2C8;&#xB2E4;.</Description>
     <MoreInfo>https://github.com/semisemil/git-svn-shuttle</MoreInfo>
     <License>LICENSE.txt</License>
     <GettingStartedGuide>GETTING_STARTED.txt</GettingStartedGuide>
