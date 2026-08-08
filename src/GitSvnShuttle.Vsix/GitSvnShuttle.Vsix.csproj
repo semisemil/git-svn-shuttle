@@ -4,32 +4,58 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>GitSvnShuttle.Vsix</AssemblyName>
     <RootNamespace>GitSvnShuttle.Vsix</RootNamespace>
-    <Version>0.3.0</Version>
-    <AssemblyVersion>0.3.0.0</AssemblyVersion>
-    <FileVersion>0.3.0.0</FileVersion>
+    <Version>0.3.2</Version>
+    <AssemblyVersion>0.3.2.0</AssemblyVersion>
+    <FileVersion>0.3.2.0</FileVersion>
     <UseWPF>true</UseWPF>
     <UseCodebase>true</UseCodebase>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <DeployExtension Condition="'$(BuildingInsideVisualStudio)' != 'true'">false</DeployExtension>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
+    <CreateVsixSourceItemsFromReferenceIgnoreFileExtension>false</CreateVsixSourceItemsFromReferenceIgnoreFileExtension>
     <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\GitSvnShuttle.Core\GitSvnShuttle.Core.csproj" />
+    <ProjectReference Include="..\GitSvnShuttle.Core\GitSvnShuttle.Core.csproj">
+      <IncludeOutputGroupsInVSIX>BuiltProjectOutputGroup;BuiltProjectOutputGroupDependencies;SatelliteDllsProjectOutputGroup</IncludeOutputGroupsInVSIX>
+      <IncludeOutputGroupsInVSIXLocalOnly>DebugSymbolsProjectOutputGroup</IncludeOutputGroupsInVSIXLocalOnly>
+    </ProjectReference>
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2142" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="System.Design" />
+    <SuppressFromVsix Include="GitSvnShuttle.Core.pdb" />
   </ItemGroup>
 
   <ItemGroup>
     <VSCTCompile Include="GitSvnShuttle.vsct" />
     <None Remove="source.extension.vsixmanifest" />
     <SourceVsixManifest Include="source.extension.vsixmanifest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\GitSvnShuttle.Icon.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="Assets\GitSvnShuttle.Preview.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\LICENSE.txt">
+      <Link>LICENSE.txt</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\RELEASE_NOTES.txt">
+      <Link>RELEASE_NOTES.txt</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\GETTING_STARTED.txt">
+      <Link>GETTING_STARTED.txt</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
   </ItemGroup>
 
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />

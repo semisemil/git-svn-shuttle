@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -9,6 +12,7 @@ namespace GitSvnShuttle.Core;
 
 public sealed class GitSvnWorkspaceService
 {
+    private const int MaxDirectoriesToScan = 25_000;
     private static readonly string[] IgnoredDirectoryNames =
     {
         ".git", ".vs", "bin", "obj", "node_modules", "packages",
@@ -51,40 +55,43 @@ public sealed class GitSvnWorkspaceService
     {
         var status = await runner.RunAsync(
             repositoryPath,
-            new[] { "status", "--porcelain=v1" },
+            new[] { "--no-optional-locks", "status", "--porcelain=v1" },
             cancellationToken).ConfigureAwait(false);
 
         if (!status.Succeeded)
         {
-            return RepositoryWithProblem(repositoryPath, "Git 상태를 읽지 못했습니다: " + status.CombinedOutput);
+            return RepositoryWithProblem(repositoryPath, null, "Git 상태를 읽지 못했습니다: " + status.CombinedOutput);
         }
 
-        var gitDirectory = await runner.RunAsync(
+        var gitDirectoryResult = await runner.RunAsync(
             repositoryPath,
             new[] { "rev-parse", "--git-dir" },
             cancellationToken).ConfigureAwait(false);
+        var gitDirectory = gitDirectoryResult.Succeeded
+            ? ResolveGitDirectory(repositoryPath, gitDirectoryResult.StandardOutput)
+            : null;
 
-        if (!gitDirectory.Succeeded)
+        if (gitDirectory == null)
         {
-            return RepositoryWithProblem(repositoryPath, "Git 저장소가 아닙니다.");
+            return RepositoryWithProblem(repositoryPath, null, "Git 저장소 경로를 확인하지 못했습니다.");
         }
 
-        var operationProblem = FindOperationProblem(repositoryPath, gitDirectory.StandardOutput);
+        var operationProblem = FindOperationProblem(gitDirectory);
         if (operationProblem != null)
         {
-            return RepositoryWithProblem(repositoryPath, operationProblem);
+            return RepositoryWithProblem(repositoryPath, gitDirectory, operationProblem);
         }
 
         var baselineHash = await FindSvnBaselineAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
         if (baselineHash == null)
         {
-            return RepositoryWithProblem(repositoryPath, "SVN과 동기화된 기준 커밋을 찾지 못했습니다.");
+            return RepositoryWithProblem(repositoryPath, gitDirectory, "SVN과 동기화된 기준 커밋을 찾지 못했습니다.");
         }
 
         var baseline = await GetCommitAsync(repositoryPath, baselineHash, cancellationToken).ConfigureAwait(false);
         if (baseline == null)
         {
-            return RepositoryWithProblem(repositoryPath, "SVN 기준 커밋 정보를 읽지 못했습니다.");
+            return RepositoryWithProblem(repositoryPath, gitDirectory, "SVN 기준 커밋 정보를 읽지 못했습니다.");
         }
 
         var commits = await GetPendingCommitsAsync(repositoryPath, baselineHash, cancellationToken).ConfigureAwait(false);
@@ -92,7 +99,13 @@ public sealed class GitSvnWorkspaceService
             ? null
             : "커밋되지 않은 변경이 있습니다.";
 
-        return new GitSvnRepository(GetRepositoryName(repositoryPath), repositoryPath, baseline, commits, problem);
+        return new GitSvnRepository(
+            GetRepositoryName(repositoryPath),
+            repositoryPath,
+            gitDirectory,
+            baseline,
+            commits,
+            problem);
     }
 
     public async Task<OperationResult> RebaseAsync(string repositoryPath, CancellationToken cancellationToken)
@@ -111,19 +124,101 @@ public sealed class GitSvnWorkspaceService
         return ToOperationResult(repositoryPath, "SVN 변경 가져오기", result);
     }
 
-    public async Task<OperationResult> DcommitAsync(string repositoryPath, CancellationToken cancellationToken)
+    public async Task<PublishPreparationResult> PrepareDcommitAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
     {
-        var preflight = await PreflightDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        if (!preflight.Succeeded)
+        var snapshot = await CapturePublishSnapshotAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (snapshot == null)
         {
-            return preflight;
+            return PreparationFailed(repositoryPath, "게시할 저장소 상태를 고정하지 못했습니다.");
         }
 
-        var result = await runner.RunAsync(
-            repositoryPath,
-            new[] { "svn", "dcommit" },
-            cancellationToken).ConfigureAwait(false);
-        return ToOperationResult(repositoryPath, "SVN에 게시", result);
+        var validation = await ValidatePreparedSnapshotAsync(snapshot, runDryRun: true, cancellationToken)
+            .ConfigureAwait(false);
+        return validation.Succeeded
+            ? new PublishPreparationResult(
+                new OperationResult(repositoryPath, true, "게시 전 확인 완료"),
+                snapshot)
+            : new PublishPreparationResult(validation, null);
+    }
+
+    public async Task<OperationResult> DcommitPreparedAsync(
+        GitSvnPublishSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (snapshot == null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var validation = await ValidatePreparedSnapshotAsync(snapshot, runDryRun: true, cancellationToken)
+            .ConfigureAwait(false);
+        if (!validation.Succeeded)
+        {
+            return validation;
+        }
+
+        var finalValidation = await ValidatePreparedSnapshotAsync(snapshot, runDryRun: false, cancellationToken)
+            .ConfigureAwait(false);
+        if (!finalValidation.Succeeded)
+        {
+            return finalValidation;
+        }
+
+        return await ExecutePreparedDcommitAsync(snapshot, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<OperationResult>> DcommitPreparedAllAsync(
+        IReadOnlyList<GitSvnPublishSnapshot> snapshots,
+        CancellationToken cancellationToken)
+    {
+        if (snapshots == null)
+        {
+            throw new ArgumentNullException(nameof(snapshots));
+        }
+
+        var results = new List<OperationResult>();
+
+        // Nothing is published until every confirmed snapshot still passes its dry run.
+        foreach (var snapshot in snapshots)
+        {
+            var validation = await ValidatePreparedSnapshotAsync(snapshot, runDryRun: true, cancellationToken)
+                .ConfigureAwait(false);
+            if (!validation.Succeeded)
+            {
+                results.Add(validation);
+                return results;
+            }
+        }
+
+        foreach (var snapshot in snapshots)
+        {
+            var finalValidation = await ValidatePreparedSnapshotAsync(snapshot, runDryRun: false, cancellationToken)
+                .ConfigureAwait(false);
+            if (!finalValidation.Succeeded)
+            {
+                results.Add(finalValidation);
+                return results;
+            }
+
+            var result = await ExecutePreparedDcommitAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            results.Add(result);
+            if (!result.Succeeded)
+            {
+                break;
+            }
+        }
+
+        return results;
+    }
+
+    public async Task<OperationResult> DcommitAsync(string repositoryPath, CancellationToken cancellationToken)
+    {
+        var preparation = await PrepareDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        return preparation.Succeeded
+            ? await DcommitPreparedAsync(preparation.Snapshot!, cancellationToken).ConfigureAwait(false)
+            : preparation.Outcome;
     }
 
     public async Task<IReadOnlyList<OperationResult>> RebaseAllAsync(
@@ -148,37 +243,72 @@ public sealed class GitSvnWorkspaceService
         IReadOnlyList<string> repositoryPaths,
         CancellationToken cancellationToken)
     {
-        var results = new List<OperationResult>();
-
-        // Nothing is published until every repository has passed its preflight.
+        var snapshots = new List<GitSvnPublishSnapshot>();
         foreach (var repositoryPath in repositoryPaths)
         {
-            var preflight = await PreflightDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-            if (!preflight.Succeeded)
+            var preparation = await PrepareDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+            if (!preparation.Succeeded)
             {
-                results.Add(preflight);
-                return results;
+                return new[] { preparation.Outcome };
             }
+
+            snapshots.Add(preparation.Snapshot!);
         }
 
-        foreach (var repositoryPath in repositoryPaths)
-        {
-            var command = await runner.RunAsync(
-                repositoryPath,
-                new[] { "svn", "dcommit" },
-                cancellationToken).ConfigureAwait(false);
-            var result = ToOperationResult(repositoryPath, "SVN에 게시", command);
-            results.Add(result);
-            if (!result.Succeeded)
-            {
-                break;
-            }
-        }
-
-        return results;
+        return await DcommitPreparedAllAsync(snapshots, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<OperationResult> PreflightDcommitAsync(
+    private async Task<OperationResult> ExecutePreparedDcommitAsync(
+        GitSvnPublishSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        var result = await runner.RunAsync(
+            snapshot.RepositoryPath,
+            new[] { "svn", "dcommit", snapshot.HeadHash },
+            cancellationToken).ConfigureAwait(false);
+        return ToOperationResult(snapshot.RepositoryPath, "SVN에 게시", result);
+    }
+
+    private async Task<OperationResult> ValidatePreparedSnapshotAsync(
+        GitSvnPublishSnapshot expected,
+        bool runDryRun,
+        CancellationToken cancellationToken)
+    {
+        var rules = await ValidateDcommitRulesAsync(expected.RepositoryPath, cancellationToken).ConfigureAwait(false);
+        if (!rules.Succeeded)
+        {
+            return rules;
+        }
+
+        var current = await CapturePublishSnapshotAsync(expected.RepositoryPath, cancellationToken).ConfigureAwait(false);
+        if (current == null || !PublishSnapshotsMatch(expected, current))
+        {
+            return SnapshotChanged(expected.RepositoryPath);
+        }
+
+        if (!runDryRun)
+        {
+            return new OperationResult(expected.RepositoryPath, true, "확인한 게시 상태와 일치합니다.");
+        }
+
+        var dryRun = await runner.RunAsync(
+            expected.RepositoryPath,
+            new[] { "svn", "dcommit", "--dry-run", expected.HeadHash },
+            cancellationToken).ConfigureAwait(false);
+        if (!dryRun.Succeeded)
+        {
+            return Failed(
+                expected.RepositoryPath,
+                "dcommit 사전 검사가 실패했습니다: " + dryRun.CombinedOutput);
+        }
+
+        var afterDryRun = await CapturePublishSnapshotAsync(expected.RepositoryPath, cancellationToken).ConfigureAwait(false);
+        return afterDryRun != null && PublishSnapshotsMatch(expected, afterDryRun)
+            ? new OperationResult(expected.RepositoryPath, true, "사전 검사 통과")
+            : SnapshotChanged(expected.RepositoryPath);
+    }
+
+    private async Task<OperationResult> ValidateDcommitRulesAsync(
         string repositoryPath,
         CancellationToken cancellationToken)
     {
@@ -204,13 +334,7 @@ public sealed class GitSvnWorkspaceService
             return Failed(repositoryPath, "게시 범위에 merge commit이 있습니다.");
         }
 
-        var dryRun = await runner.RunAsync(
-            repositoryPath,
-            new[] { "svn", "dcommit", "--dry-run" },
-            cancellationToken).ConfigureAwait(false);
-        return dryRun.Succeeded
-            ? new OperationResult(repositoryPath, true, "사전 검사 통과")
-            : Failed(repositoryPath, "dcommit 사전 검사가 실패했습니다: " + dryRun.CombinedOutput);
+        return new OperationResult(repositoryPath, true, "게시 규칙 검사 통과");
     }
 
     private async Task<OperationResult> PreflightAsync(
@@ -220,7 +344,7 @@ public sealed class GitSvnWorkspaceService
     {
         var status = await runner.RunAsync(
             repositoryPath,
-            new[] { "status", "--porcelain=v1" },
+            new[] { "--no-optional-locks", "status", "--porcelain=v1" },
             cancellationToken).ConfigureAwait(false);
         if (!status.Succeeded)
         {
@@ -253,17 +377,78 @@ public sealed class GitSvnWorkspaceService
         return new OperationResult(repositoryPath, true, "사전 검사 통과");
     }
 
+    private async Task<GitSvnPublishSnapshot?> CapturePublishSnapshotAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
+    {
+        var headResult = await runner.RunAsync(
+            repositoryPath,
+            new[] { "rev-parse", "--verify", "HEAD" },
+            cancellationToken).ConfigureAwait(false);
+        var head = FirstOutputLine(headResult);
+        if (head == null)
+        {
+            return null;
+        }
+
+        var baseline = await FindSvnBaselineAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (baseline == null)
+        {
+            return null;
+        }
+
+        var commits = await GetPendingCommitsAsync(repositoryPath, baseline, cancellationToken).ConfigureAwait(false);
+        if (commits.Count == 0)
+        {
+            return null;
+        }
+
+        var configResult = await runner.RunAsync(
+            repositoryPath,
+            new[] { "config", "--get-regexp", "^(svn\\.|svn-remote\\.)" },
+            cancellationToken).ConfigureAwait(false);
+        if (!configResult.Succeeded || string.IsNullOrWhiteSpace(configResult.StandardOutput))
+        {
+            return null;
+        }
+
+        var gitDirectoryResult = await runner.RunAsync(
+            repositoryPath,
+            new[] { "rev-parse", "--git-dir" },
+            cancellationToken).ConfigureAwait(false);
+        var gitDirectory = gitDirectoryResult.Succeeded
+            ? ResolveGitDirectory(repositoryPath, gitDirectoryResult.StandardOutput)
+            : null;
+        if (gitDirectory == null)
+        {
+            return null;
+        }
+
+        var svnTargets = ExtractSvnTargets(configResult.StandardOutput);
+        if (svnTargets.Count == 0)
+        {
+            return null;
+        }
+
+        return new GitSvnPublishSnapshot(
+            GetRepositoryName(repositoryPath),
+            repositoryPath,
+            gitDirectory,
+            head,
+            baseline,
+            commits,
+            ComputeFingerprint(configResult.StandardOutput),
+            svnTargets);
+    }
+
     private async Task<IReadOnlyList<GitSvnCommit>> GetPendingCommitsAsync(
         string repositoryPath,
         CancellationToken cancellationToken)
     {
         var baseline = await FindSvnBaselineAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        if (baseline == null)
-        {
-            return Array.Empty<GitSvnCommit>();
-        }
-
-        return await GetPendingCommitsAsync(repositoryPath, baseline, cancellationToken).ConfigureAwait(false);
+        return baseline == null
+            ? Array.Empty<GitSvnCommit>()
+            : await GetPendingCommitsAsync(repositoryPath, baseline, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<GitSvnCommit>> GetPendingCommitsAsync(
@@ -282,12 +467,9 @@ public sealed class GitSvnWorkspaceService
             },
             cancellationToken).ConfigureAwait(false);
 
-        if (!log.Succeeded || string.IsNullOrWhiteSpace(log.StandardOutput))
-        {
-            return Array.Empty<GitSvnCommit>();
-        }
-
-        return ParseCommits(log.StandardOutput);
+        return !log.Succeeded || string.IsNullOrWhiteSpace(log.StandardOutput)
+            ? Array.Empty<GitSvnCommit>()
+            : ParseCommits(log.StandardOutput);
     }
 
     private async Task<GitSvnCommit?> GetCommitAsync(
@@ -327,22 +509,44 @@ public sealed class GitSvnWorkspaceService
             repositoryPath,
             new[] { "log", "--grep=git-svn-id:", "--format=%H", "-1" },
             cancellationToken).ConfigureAwait(false);
-        return result.Succeeded && !string.IsNullOrWhiteSpace(result.StandardOutput)
-            ? result.StandardOutput.Trim()
-            : null;
+        return FirstOutputLine(result);
     }
 
     private static IReadOnlyList<string> FindRepositoryDirectories(string rootPath)
     {
-        var root = Path.GetFullPath(rootPath);
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            throw new ArgumentException("Solution directory is required.", nameof(rootPath));
+        }
+
+        var root = NormalizeDirectory(rootPath);
+        if (!Directory.Exists(root))
+        {
+            return Array.Empty<string>();
+        }
+
         var repositories = new List<string>();
         var pending = new Queue<string>();
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         pending.Enqueue(root);
 
+        var scanned = 0;
         while (pending.Count > 0)
         {
-            var directory = pending.Dequeue();
-            if (Directory.Exists(Path.Combine(directory, ".git")) || File.Exists(Path.Combine(directory, ".git")))
+            if (++scanned > MaxDirectoriesToScan)
+            {
+                throw new InvalidOperationException(
+                    "저장소 탐색 범위가 너무 큽니다. 솔루션 경로와 junction 구성을 확인하세요.");
+            }
+
+            var directory = NormalizeDirectory(pending.Dequeue());
+            if (!visited.Add(directory))
+            {
+                continue;
+            }
+
+            if (Directory.Exists(Path.Combine(directory, ".git")) ||
+                File.Exists(Path.Combine(directory, ".git")))
             {
                 repositories.Add(directory);
             }
@@ -360,13 +564,24 @@ public sealed class GitSvnWorkspaceService
             {
                 continue;
             }
+            catch (SecurityException)
+            {
+                continue;
+            }
 
             foreach (var child in children)
             {
                 var name = Path.GetFileName(child);
-                if (!IgnoredDirectoryNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+                if (IgnoredDirectoryNames.Contains(name, StringComparer.OrdinalIgnoreCase) ||
+                    IsReparsePoint(child))
                 {
-                    pending.Enqueue(child);
+                    continue;
+                }
+
+                var normalizedChild = NormalizeDirectory(child);
+                if (IsWithinRoot(root, normalizedChild))
+                {
+                    pending.Enqueue(normalizedChild);
                 }
             }
         }
@@ -377,14 +592,99 @@ public sealed class GitSvnWorkspaceService
             .ToArray();
     }
 
-    private static string? FindOperationProblem(string repositoryPath, string gitDirectoryValue)
+    private static bool PublishSnapshotsMatch(GitSvnPublishSnapshot expected, GitSvnPublishSnapshot current) =>
+        string.Equals(expected.RepositoryPath, current.RepositoryPath, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(expected.HeadHash, current.HeadHash, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(expected.BaselineHash, current.BaselineHash, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(
+            expected.SvnConfigurationFingerprint,
+            current.SvnConfigurationFingerprint,
+            StringComparison.Ordinal) &&
+        expected.PendingCommits.Select(commit => commit.Hash).SequenceEqual(
+            current.PendingCommits.Select(commit => commit.Hash),
+            StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string> ExtractSvnTargets(string configOutput)
     {
-        var gitDirectory = gitDirectoryValue.Trim();
-        if (!Path.IsPathRooted(gitDirectory))
+        var entries = configOutput
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line =>
+            {
+                var separator = line.IndexOfAny(new[] { ' ', '\t' });
+                return separator > 0
+                    ? new { Key = line.Substring(0, separator), Value = line.Substring(separator + 1).Trim() }
+                    : null;
+            })
+            .Where(entry => entry != null && !string.IsNullOrWhiteSpace(entry.Value))
+            .ToArray();
+
+        var commitTargets = entries
+            .Where(entry => entry!.Key.Equals("svn.commiturl", StringComparison.OrdinalIgnoreCase) ||
+                            entry.Key.EndsWith(".commiturl", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry!.Value)
+            .ToArray();
+        var targets = commitTargets.Length > 0
+            ? commitTargets
+            : entries
+                .Where(entry => entry!.Key.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
+                .Select(entry => entry!.Value)
+                .ToArray();
+
+        return targets
+            .Select(SensitiveTextRedactor.Redact)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string ComputeFingerprint(string value)
+    {
+        using (var sha256 = SHA256.Create())
         {
-            gitDirectory = Path.GetFullPath(Path.Combine(repositoryPath, gitDirectory));
+            return Convert.ToBase64String(sha256.ComputeHash(Encoding.UTF8.GetBytes(value)));
+        }
+    }
+
+    private static string? FirstOutputLine(GitCommandResult result) =>
+        result.Succeeded
+            ? result.StandardOutput
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim())
+                .FirstOrDefault(line => line.Length > 0)
+            : null;
+
+    private static string? ResolveGitDirectory(string repositoryPath, string gitDirectoryValue)
+    {
+        var value = gitDirectoryValue
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
         }
 
+        try
+        {
+            return Path.GetFullPath(Path.IsPathRooted(value)
+                ? value
+                : Path.Combine(repositoryPath, value));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    private static string? FindOperationProblem(string gitDirectory)
+    {
         if (File.Exists(Path.Combine(gitDirectory, "MERGE_HEAD")))
         {
             return "merge가 진행 중입니다.";
@@ -399,14 +699,60 @@ public sealed class GitSvnWorkspaceService
         return null;
     }
 
-    private static GitSvnRepository RepositoryWithProblem(string path, string problem) =>
-        new GitSvnRepository(GetRepositoryName(path), path, null, Array.Empty<GitSvnCommit>(), problem);
+    private static bool IsReparsePoint(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (SecurityException)
+        {
+            return true;
+        }
+    }
+
+    private static string NormalizeDirectory(string path) =>
+        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    private static bool IsWithinRoot(string root, string candidate)
+    {
+        if (string.Equals(root, candidate, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var prefix = root + Path.DirectorySeparatorChar;
+        return candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static GitSvnRepository RepositoryWithProblem(string path, string? gitDirectory, string problem) =>
+        new GitSvnRepository(
+            GetRepositoryName(path),
+            path,
+            gitDirectory,
+            null,
+            Array.Empty<GitSvnCommit>(),
+            problem);
 
     private static string GetRepositoryName(string path)
     {
         var name = new DirectoryInfo(path).Name;
         return string.IsNullOrWhiteSpace(name) ? path : name;
     }
+
+    private static PublishPreparationResult PreparationFailed(string path, string message) =>
+        new PublishPreparationResult(Failed(path, message), null);
+
+    private static OperationResult SnapshotChanged(string path) =>
+        Failed(path, "확인 후 저장소 상태 또는 SVN 설정이 변경되었습니다. 새로 고친 뒤 다시 확인하세요.");
 
     private static OperationResult Failed(string path, string message) =>
         new OperationResult(path, false, message);
@@ -416,6 +762,8 @@ public sealed class GitSvnWorkspaceService
             path,
             result.Succeeded,
             result.Succeeded
-                ? action + " 완료" + (string.IsNullOrWhiteSpace(result.CombinedOutput) ? string.Empty : Environment.NewLine + result.CombinedOutput)
+                ? action + " 완료" + (string.IsNullOrWhiteSpace(result.CombinedOutput)
+                    ? string.Empty
+                    : Environment.NewLine + result.CombinedOutput)
                 : action + " 실패" + Environment.NewLine + result.CombinedOutput);
 }

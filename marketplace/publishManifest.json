@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json.schemastore.org/vsix-publish",
+  "categories": [
+    "coding"
+  ],
+  "identity": {
+    "internalName": "git-svn-shuttle"
+  },
+  "overview": "overview.md",
+  "priceCategory": "free",
+  "publisher": "semisemil",
+  "private": false,
+  "qna": true,
+  "repo": "https://github.com/semisemil/git-svn-shuttle",
+  "assetFiles": [
+    {
+      "pathOnDisk": "images/git-svn-shuttle-overview.png",
+      "targetPath": "images/git-svn-shuttle-overview.png"
+    },
+    {
+      "pathOnDisk": "../src/GitSvnShuttle.Vsix/Assets/GitSvnShuttle.Preview.png",
+      "targetPath": "images/git-svn-shuttle-icon.png"
+    }
+  ]
+}
