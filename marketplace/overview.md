@@ -1,53 +1,49 @@
 # Git-SVN Shuttle
 
-Visual Studio의 Git 작업 흐름과 기존 SVN 서버 사이를 연결하는 가벼운 Git-SVN 도구 창입니다.
+Visual Studio에서 `git svn rebase`와 `git svn dcommit`을 실행하고, SVN에 게시할 로컬 커밋을 미리 확인하는 확장입니다.
 
 ![Git-SVN Shuttle overview](images/git-svn-shuttle-overview.png)
 
-## 한눈에 확인하는 게시 범위
+## 주요 기능
 
-- 파란색 위쪽 화살표 행: `git svn dcommit`으로 SVN에 게시될 로컬 커밋
-- SVN 기준 행: 이미 SVN과 동일한 마지막 커밋
-- 저장소 헤더의 경고: 커밋되지 않은 변경이나 해결해야 할 작업 상태
-- 저장소별 실행과 여러 저장소 순차 실행 지원
+- 솔루션 루트와 하위 폴더의 Git-SVN 저장소 자동 탐색
+- 최신 커밋부터 내림차순으로 표시
+- SVN과 동일한 기준 커밋과 아직 게시하지 않은 로컬 커밋 구분
+- 저장소별 `rebase`, `dcommit` 실행
+- 여러 저장소 순차 실행
+- 커밋되지 않은 변경과 실행할 수 없는 저장소 상태 표시
 
-## SVN 변경 받기
+파란색 위쪽 화살표가 있는 커밋만 다음 `dcommit` 대상입니다. `SVN 기준` 표시는 SVN과 이미 동일한 마지막 커밋이며, 커밋되지 않은 파일 변경은 게시 목록과 별도로 저장소 헤더에 표시됩니다.
 
-아래쪽 화살표는 해당 저장소에서 `git svn rebase`를 실행합니다. 작업 트리가 깨끗하지 않거나 브랜치가 분리된 경우에는 실행하지 않습니다.
+## 사용 방법
 
-## 확인 후 SVN에 게시
+1. Git-SVN 작업 복사본이 포함된 솔루션을 엽니다.
+2. **도구 > Git-SVN Shuttle**을 엽니다.
+3. 아래쪽 화살표로 SVN 변경을 받습니다.
+4. 파란색으로 표시된 게시 대상 커밋을 확인합니다.
+5. 위쪽 화살표 또는 **SVN에 게시**를 누르고 확인 창에서 실행 대상을 검토합니다.
 
-위쪽 화살표를 누르면 게시 대상 커밋과 SVN 대상을 먼저 보여줍니다. 확인 시점의 HEAD, 커밋 목록, SVN 기준점과 설정을 기록하고 실행 직전에 다시 검증합니다. 상태가 달라졌다면 게시를 중단하고 새 확인을 요구합니다.
+상세 명령 출력은 **보기 > 출력 > Git-SVN Shuttle**에서 확인할 수 있습니다.
 
-## Git-SVN 실행 환경 설정
+## dcommit 확인과 실행 보호
 
-도구 창을 열 때 `git --version`과 `git svn --version`을 확인합니다. Git-SVN을 찾지 못하면 다음 동작을 바로 사용할 수 있습니다.
+확인 창에는 SVN 대상과 게시할 커밋 목록이 표시됩니다. 실행 전 `dcommit --dry-run`을 수행하고, 확인 시점의 HEAD, 게시 대상, SVN 기준점과 Git-SVN 설정이 그대로인지 다시 검사합니다. 상태가 달라졌다면 게시하지 않고 새 확인을 요구합니다.
 
-- `git.exe` 직접 선택
-- PATH, Git for Windows, MSYS2 일반 설치 위치 자동 검색
-- 현재 경로 재검사
-- 사용자 지정 경로 초기화
-
-## 보안과 리소스 사용
-
-- junction 및 reparse-point 하위 탐색 차단
-- 확인된 HEAD를 고정하고 dcommit 직전 상태 재검증
-- Git 프로세스 시간 제한, 취소, 출력 크기 제한
-- 자격 증명 형태 로그와 SVN URL 사용자 정보 제거
-- 주기적 Git 폴링 대신 debounced 파일 시스템 알림 사용
-- 게시자 서버, 원격 분석 또는 제3자 분석 서비스 없음
+**모두 게시**는 모든 저장소를 먼저 검사한 뒤 순서대로 실행하며, 하나가 실패하면 그 지점에서 멈춥니다. 앞에서 성공한 다른 저장소의 `dcommit`은 자동으로 되돌리지 않습니다.
 
 ## 요구 사항
 
-- Visual Studio 2022 또는 Visual Studio 2026, x64
+- x64 Windows의 Visual Studio 2022 또는 Visual Studio 2026
 - .NET Framework 4.7.2 이상
-- `git svn`을 사용할 수 있는 Git 실행 환경
+- `git svn`을 실행할 수 있는 Git 환경
 - 이미 clone/init이 완료된 Git-SVN 작업 복사본
 
-Git-SVN Shuttle은 `git svn clone`이나 SVN에서 Git으로의 일회성 마이그레이션을 수행하지 않습니다.
+도구 창에서 Git-SVN 실행 환경을 자동으로 확인합니다. 찾지 못하면 `git.exe`를 직접 선택하거나 Git for Windows와 MSYS2의 일반 설치 위치를 검색할 수 있습니다.
 
-## Privacy
+Git-SVN Shuttle은 Git-SVN을 설치하지 않으며, `git svn clone`, `init` 또는 SVN에서 Git으로의 마이그레이션을 수행하지 않습니다.
 
-Git-SVN Shuttle does not send telemetry, repository contents, credentials, or personal data to the publisher. It only invokes the selected local Git-SVN runtime, which communicates with the SVN endpoints configured by the user.
+## 개인정보 보호
 
-[Source code](https://github.com/semisemil/git-svn-shuttle) · [Privacy notice](https://github.com/semisemil/git-svn-shuttle/blob/main/PRIVACY.md) · [MIT license](https://github.com/semisemil/git-svn-shuttle/blob/main/LICENSE.txt)
+원격 분석을 사용하지 않으며 저장소 내용, 자격 증명 또는 개인 정보를 게시자에게 보내지 않습니다.
+
+[소스 코드](https://github.com/semisemil/git-svn-shuttle) · [개인정보 처리 안내](https://github.com/semisemil/git-svn-shuttle/blob/main/PRIVACY.md) · [MIT 라이선스](https://github.com/semisemil/git-svn-shuttle/blob/main/LICENSE.txt)
