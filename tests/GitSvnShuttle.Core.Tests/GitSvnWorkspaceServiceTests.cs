@@ -21,6 +21,7 @@ public sealed class GitSvnWorkspaceServiceTests
         var result = await service.InspectAsync("C:\\work\\main", CancellationToken.None);
 
         Assert.True(result.IsReady);
+        Assert.NotNull(result.GitDirectory);
         Assert.NotNull(result.SvnBaseline);
         Assert.Equal("Import from SVN", result.SvnBaseline!.Subject);
         Assert.Equal(2, result.PendingCommits.Count);
@@ -31,44 +32,80 @@ public sealed class GitSvnWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task DcommitAllAsync_PreflightsEveryRepositoryBeforePublishing()
+    public async Task DcommitPreparedAsync_RejectsChangedHeadAfterConfirmation()
     {
-        var runner = new FakeGitCommandRunner();
-        QueueSuccessfulDcommitPreflight(runner, "base-a", "commit-a");
-        runner.Enqueue(output: string.Empty); // repo B status
-        runner.Enqueue(output: "main"); // repo B branch
-        runner.Enqueue(output: "base-b"); // repo B pending baseline
-        runner.Enqueue(output: string.Empty); // repo B has no pending commits
+        var repository = "C:\\work\\main";
+        var heads = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [repository] = "commit-a",
+        };
+        var runner = CreateRepositoryRunner(heads);
         var service = new GitSvnWorkspaceService(runner);
 
-        var results = await service.DcommitAllAsync(
-            new[] { "C:\\work\\a", "C:\\work\\b" },
-            CancellationToken.None);
+        var preparation = await service.PrepareDcommitAsync(repository, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
 
-        Assert.Single(results);
-        Assert.False(results[0].Succeeded);
-        Assert.DoesNotContain(runner.Calls, call => call.Arguments == "svn dcommit");
+        heads[repository] = "commit-b";
+        var result = await service.DcommitPreparedAsync(preparation.Snapshot!, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("변경되었습니다", result.Message);
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
     }
 
     [Fact]
-    public async Task DcommitAllAsync_PublishesSequentiallyAfterAllPreflights()
+    public async Task DcommitPreparedAsync_RejectsChangedSvnConfigurationAfterConfirmation()
     {
-        var runner = new FakeGitCommandRunner();
-        QueueSuccessfulDcommitPreflight(runner, "base-a", "commit-a");
-        QueueSuccessfulDcommitPreflight(runner, "base-b", "commit-b");
-        runner.Enqueue(output: "Committed r10");
-        runner.Enqueue(output: "Committed r11");
+        var repository = "C:\\work\\main";
+        var heads = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [repository] = "commit-a",
+        };
+        var svnTargets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [repository] = "https://svn.example.test/project/trunk",
+        };
+        var runner = CreateRepositoryRunner(heads, svnTargets);
         var service = new GitSvnWorkspaceService(runner);
 
-        var results = await service.DcommitAllAsync(
-            new[] { "C:\\work\\a", "C:\\work\\b" },
+        var preparation = await service.PrepareDcommitAsync(repository, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+
+        svnTargets[repository] = "https://evil.example.test/other/trunk";
+        var result = await service.DcommitPreparedAsync(preparation.Snapshot!, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("SVN 설정이 변경", result.Message);
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
+    }
+
+    [Fact]
+    public async Task DcommitPreparedAllAsync_PreflightsEverySnapshotBeforePublishingPinnedHeads()
+    {
+        var repositoryA = "C:\\work\\a";
+        var repositoryB = "C:\\work\\b";
+        var heads = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [repositoryA] = "commit-a",
+            [repositoryB] = "commit-b",
+        };
+        var runner = CreateRepositoryRunner(heads);
+        var service = new GitSvnWorkspaceService(runner);
+        var preparedA = await service.PrepareDcommitAsync(repositoryA, CancellationToken.None);
+        var preparedB = await service.PrepareDcommitAsync(repositoryB, CancellationToken.None);
+        runner.Calls.Clear();
+
+        var results = await service.DcommitPreparedAllAsync(
+            new[] { preparedA.Snapshot!, preparedB.Snapshot! },
             CancellationToken.None);
 
         Assert.Equal(2, results.Count);
         Assert.All(results, result => Assert.True(result.Succeeded));
-        var firstPublish = runner.Calls.FindIndex(call => call.Arguments == "svn dcommit");
-        var lastDryRun = runner.Calls.FindLastIndex(call => call.Arguments == "svn dcommit --dry-run");
+        var firstPublish = runner.Calls.FindIndex(IsActualDcommit);
+        var lastDryRun = runner.Calls.FindLastIndex(call => call.Arguments.Contains("svn dcommit --dry-run"));
         Assert.True(firstPublish > lastDryRun);
+        Assert.Contains(runner.Calls, call => call.Arguments == "svn dcommit commit-a");
+        Assert.Contains(runner.Calls, call => call.Arguments == "svn dcommit commit-b");
     }
 
     [Fact]
@@ -84,17 +121,72 @@ public sealed class GitSvnWorkspaceServiceTests
         Assert.DoesNotContain(runner.Calls, call => call.Arguments == "svn rebase");
     }
 
-    private static void QueueSuccessfulDcommitPreflight(
-        FakeGitCommandRunner runner,
-        string baseline,
-        string pendingHash)
+    private static FakeGitCommandRunner CreateRepositoryRunner(
+        IReadOnlyDictionary<string, string> heads,
+        IReadOnlyDictionary<string, string>? svnTargets = null)
     {
-        runner.Enqueue(output: string.Empty); // status
-        runner.Enqueue(output: "main"); // branch
-        runner.Enqueue(output: baseline); // pending baseline
-        runner.Enqueue(output: pendingHash + "\u001f" + pendingHash + "\u001fKim\u001f2026-08-07\u001fCommit");
-        runner.Enqueue(output: baseline); // merge-check baseline
-        runner.Enqueue(output: string.Empty); // no merges
-        runner.Enqueue(output: "diff-tree " + pendingHash); // dry run
+        var runner = new FakeGitCommandRunner();
+        runner.Responder = (repository, arguments) =>
+        {
+            var head = heads[repository];
+            var target = svnTargets != null && svnTargets.TryGetValue(repository, out var configuredTarget)
+                ? configuredTarget
+                : "https://svn.example.test/" + Path.GetFileName(repository) + "/trunk";
+
+            if (arguments == "rev-parse --verify HEAD")
+            {
+                return Success(head);
+            }
+
+            if (arguments == "log --grep=git-svn-id: --format=%H -1")
+            {
+                return Success("base");
+            }
+
+            if (arguments.StartsWith("log --date=short --format=", StringComparison.Ordinal))
+            {
+                return Success(head + "\u001f" + head + "\u001fKim\u001f2026-08-07\u001fCommit " + head);
+            }
+
+            if (arguments == "config --get-regexp ^(svn\\.|svn-remote\\.)")
+            {
+                return Success("svn-remote.svn.url " + target);
+            }
+
+            if (arguments == "rev-parse --git-dir")
+            {
+                return Success(Path.Combine(repository, ".git"));
+            }
+
+            if (arguments == "--no-optional-locks status --porcelain=v1" ||
+                arguments.StartsWith("log --merges --format=%H", StringComparison.Ordinal))
+            {
+                return Success(string.Empty);
+            }
+
+            if (arguments == "symbolic-ref --quiet --short HEAD")
+            {
+                return Success("main");
+            }
+
+            if (arguments.StartsWith("svn dcommit --dry-run ", StringComparison.Ordinal))
+            {
+                return Success("diff-tree " + head);
+            }
+
+            if (arguments.StartsWith("svn dcommit ", StringComparison.Ordinal))
+            {
+                return Success("Committed " + head);
+            }
+
+            throw new InvalidOperationException("Unexpected fake Git call: " + arguments);
+        };
+        return runner;
     }
+
+    private static bool IsActualDcommit((string WorkingDirectory, string Arguments) call) =>
+        call.Arguments.StartsWith("svn dcommit ", StringComparison.Ordinal) &&
+        !call.Arguments.Contains("--dry-run", StringComparison.Ordinal);
+
+    private static GitCommandResult Success(string output) => new GitCommandResult(0, output, string.Empty);
 }

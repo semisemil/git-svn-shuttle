@@ -1,9 +1,10 @@
 using System.Windows.Controls;
 using System.Windows.Input;
+using Microsoft.Win32;
 
 namespace GitSvnShuttle.Vsix;
 
-public partial class GitSvnShuttleControl : UserControl
+public partial class GitSvnShuttleControl : UserControl, System.IDisposable
 {
     public GitSvnShuttleControl()
     {
@@ -18,9 +19,9 @@ public partial class GitSvnShuttleControl : UserControl
         {
             if (GitSvnShuttlePackage.Instance is GitSvnShuttlePackage package)
             {
-                var viewModel = new GitSvnShuttleViewModel(package);
+                var viewModel = new GitSvnShuttleViewModel(package, SelectGitExecutable);
                 DataContext = viewModel;
-                viewModel.RefreshCommand.Execute(null!);
+                viewModel.InitializeCommand.Execute(null!);
             }
         }
         catch (System.Exception exception)
@@ -33,6 +34,19 @@ public partial class GitSvnShuttleControl : UserControl
                 TextWrapping = System.Windows.TextWrapping.Wrap,
             };
         }
+    }
+
+    private static string? SelectGitExecutable()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Git-SVN이 포함된 Git 실행 파일 선택",
+            Filter = "Git 실행 파일 (git.exe)|git.exe|실행 파일 (*.exe)|*.exe",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -60,5 +74,15 @@ public partial class GitSvnShuttleControl : UserControl
 
         viewModel.CancelPublishCommand.Execute(null!);
         e.Handled = true;
+    }
+
+    public void Dispose()
+    {
+        if (DataContext is System.IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
+        DataContext = null;
     }
 }

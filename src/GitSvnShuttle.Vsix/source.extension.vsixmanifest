@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
   <Metadata>
-    <Identity Id="GitSvnShuttle.VisualStudio" Version="0.3.0" Language="en-US" Publisher="Git SVN Shuttle" />
+    <Identity Id="GitSvnShuttle.VisualStudio" Version="0.3.2" Language="ko-KR" Publisher="semisemil" />
     <DisplayName>Git-SVN Shuttle</DisplayName>
-    <Description xml:space="preserve">Rebase Git-SVN repositories from SVN and preview and dcommit local commits from Visual Studio.</Description>
-    <Tags>git, svn, git-svn, dcommit, rebase</Tags>
+    <Description xml:space="preserve">Visual Studio에서 Git-SVN 저장소의 변경을 받고, SVN에 게시할 로컬 커밋을 미리 확인한 뒤 안전하게 dcommit합니다.</Description>
+    <MoreInfo>https://github.com/semisemil/git-svn-shuttle</MoreInfo>
+    <License>LICENSE.txt</License>
+    <GettingStartedGuide>GETTING_STARTED.txt</GettingStartedGuide>
+    <ReleaseNotes>RELEASE_NOTES.txt</ReleaseNotes>
+    <Icon>Assets\GitSvnShuttle.Icon.png</Icon>
+    <PreviewImage>Assets\GitSvnShuttle.Preview.png</PreviewImage>
+    <Tags>git, svn, git-svn, dcommit, rebase, source-control</Tags>
+    <Author>semisemil</Author>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0,19.0)">

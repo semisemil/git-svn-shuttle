@@ -7,6 +7,7 @@ internal sealed class FakeGitCommandRunner : IGitCommandRunner
     private readonly Queue<GitCommandResult> results = new();
 
     public List<(string WorkingDirectory, string Arguments)> Calls { get; } = new();
+    public Func<string, string, GitCommandResult>? Responder { get; set; }
 
     public void Enqueue(int exitCode = 0, string output = "", string error = "") =>
         results.Enqueue(new GitCommandResult(exitCode, output, error));
@@ -17,10 +18,16 @@ internal sealed class FakeGitCommandRunner : IGitCommandRunner
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Calls.Add((workingDirectory, string.Join(" ", arguments)));
+        var joinedArguments = string.Join(" ", arguments);
+        Calls.Add((workingDirectory, joinedArguments));
+        if (Responder != null)
+        {
+            return Task.FromResult(Responder(workingDirectory, joinedArguments));
+        }
+
         if (results.Count == 0)
         {
-            throw new InvalidOperationException("No fake result was queued for: " + string.Join(" ", arguments));
+            throw new InvalidOperationException("No fake result was queued for: " + joinedArguments);
         }
 
         return Task.FromResult(results.Dequeue());
