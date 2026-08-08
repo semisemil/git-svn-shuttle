@@ -1,0 +1,17 @@
+Git-SVN Shuttle 시작하기
+
+1. 기존 Git-SVN 작업 복사본 안에 있는 Visual Studio 솔루션을 엽니다.
+2. Visual Studio 메뉴에서 도구 > Git-SVN Shuttle을 엽니다.
+3. 확장이 git svn 실행 환경을 자동으로 확인합니다.
+4. 실행 환경이 발견되지 않으면 폴더 아이콘으로 git.exe를 선택하거나 검색 아이콘으로 다시 찾습니다.
+5. 위쪽 파란 행은 SVN에 게시될 로컬 커밋입니다. SVN 표시가 있는 기준 행은 이미 SVN과 동일한 마지막 커밋입니다.
+6. 아래쪽 화살표는 git svn rebase, 위쪽 화살표는 확인 화면을 거친 git svn dcommit입니다.
+
+필수 조건
+
+- Visual Studio 2022 또는 2026, x64
+- .NET Framework 4.7.2 이상
+- git svn을 사용할 수 있는 Git 실행 환경
+- 이미 clone/init이 완료된 Git-SVN 저장소
+
+자세한 정보: https://github.com/semisemil/git-svn-shuttle
