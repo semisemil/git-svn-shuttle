@@ -1,3 +1,7 @@
+Git-SVN Shuttle 0.3.3
+
+- Visual Studio Marketplace의 한국어 짧은 설명이 깨지는 문제를 수정했습니다.
+
 Git-SVN Shuttle 0.3.2
 
 - Git과 git svn의 사용 가능 여부를 도구 창에서 자동으로 진단합니다.
