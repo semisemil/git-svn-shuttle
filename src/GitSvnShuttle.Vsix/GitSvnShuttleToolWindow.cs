@@ -12,4 +12,14 @@ public sealed class GitSvnShuttleToolWindow : ToolWindowPane
         Caption = "Git-SVN Shuttle";
         Content = new GitSvnShuttleControl();
     }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && Content is GitSvnShuttleControl control)
+        {
+            control.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
 }
