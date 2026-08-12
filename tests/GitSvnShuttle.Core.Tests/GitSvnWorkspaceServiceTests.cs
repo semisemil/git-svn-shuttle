@@ -121,6 +121,125 @@ public sealed class GitSvnWorkspaceServiceTests
         Assert.DoesNotContain(runner.Calls, call => call.Arguments == "svn rebase");
     }
 
+    [Fact]
+    public async Task InspectAsync_DistinguishesRebaseConflictAndListsUnmergedFiles()
+    {
+        using var repository = RebaseTestRepository.Create();
+        var runner = new FakeGitCommandRunner
+        {
+            Responder = (_, arguments) => arguments switch
+            {
+                "--no-optional-locks status --porcelain=v1" => Success("UU source.cs"),
+                "rev-parse --git-dir" => Success(repository.GitDirectory),
+                "diff --name-only --diff-filter=U -z" => Success("source.cs\0docs/안내.md\0"),
+                _ => throw new InvalidOperationException("Unexpected fake Git call: " + arguments),
+            },
+        };
+        var service = new GitSvnWorkspaceService(runner);
+
+        var result = await service.InspectAsync(repository.Path, CancellationToken.None);
+
+        Assert.True(result.IsRebaseInProgress);
+        Assert.False(result.IsReady);
+        Assert.False(result.CanContinueRebase);
+        Assert.Equal(new[] { "source.cs", "docs/안내.md" }, result.ConflictedFiles);
+        Assert.Contains("rebase 충돌", result.Problem);
+    }
+
+    [Fact]
+    public async Task ContinueRebaseAsync_BlocksWhileUnresolvedConflictsRemain()
+    {
+        using var repository = RebaseTestRepository.Create();
+        var runner = new FakeGitCommandRunner
+        {
+            Responder = (_, arguments) => arguments switch
+            {
+                "rev-parse --git-dir" => Success(repository.GitDirectory),
+                "diff --name-only --diff-filter=U -z" => Success("source.cs\0"),
+                _ => throw new InvalidOperationException("Unexpected fake Git call: " + arguments),
+            },
+        };
+        var service = new GitSvnWorkspaceService(runner);
+
+        var result = await service.ContinueRebaseAsync(repository.Path, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("미해결 충돌", result.Message);
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments == "rebase --continue");
+    }
+
+    [Fact]
+    public async Task InspectAsync_AllowsContinueAfterResolutionIsStaged()
+    {
+        using var repository = RebaseTestRepository.Create();
+        var runner = new FakeGitCommandRunner
+        {
+            Responder = (_, arguments) => arguments switch
+            {
+                "--no-optional-locks status --porcelain=v1" => Success("M  source.cs"),
+                "rev-parse --git-dir" => Success(repository.GitDirectory),
+                "diff --name-only --diff-filter=U -z" => Success(string.Empty),
+                "diff --cached --quiet --exit-code" => new GitCommandResult(1, string.Empty, string.Empty),
+                _ => throw new InvalidOperationException("Unexpected fake Git call: " + arguments),
+            },
+        };
+        var service = new GitSvnWorkspaceService(runner);
+
+        var result = await service.InspectAsync(repository.Path, CancellationToken.None);
+
+        Assert.True(result.IsRebaseInProgress);
+        Assert.True(result.CanContinueRebase);
+        Assert.Empty(result.ConflictedFiles);
+        Assert.Contains("계속할 수 있습니다", result.Problem);
+    }
+
+    [Fact]
+    public async Task ContinueRebaseAsync_RunsAfterResolutionIsStaged()
+    {
+        using var repository = RebaseTestRepository.Create();
+        var runner = new FakeGitCommandRunner
+        {
+            Responder = (_, arguments) => arguments switch
+            {
+                "rev-parse --git-dir" => Success(repository.GitDirectory),
+                "diff --name-only --diff-filter=U -z" => Success(string.Empty),
+                "diff --cached --quiet --exit-code" => new GitCommandResult(1, string.Empty, string.Empty),
+                "rebase --continue" => Success("Successfully rebased"),
+                _ => throw new InvalidOperationException("Unexpected fake Git call: " + arguments),
+            },
+        };
+        var service = new GitSvnWorkspaceService(runner);
+
+        var result = await service.ContinueRebaseAsync(repository.Path, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Contains(runner.Calls, call => call.Arguments == "rebase --continue");
+    }
+
+    [Fact]
+    public async Task AbortRebaseAsync_RequiresConfirmationBeforeRunning()
+    {
+        using var repository = RebaseTestRepository.Create();
+        var runner = new FakeGitCommandRunner
+        {
+            Responder = (_, arguments) => arguments switch
+            {
+                "rev-parse --git-dir" => Success(repository.GitDirectory),
+                "rebase --abort" => Success(string.Empty),
+                _ => throw new InvalidOperationException("Unexpected fake Git call: " + arguments),
+            },
+        };
+        var service = new GitSvnWorkspaceService(runner);
+
+        var rejected = await service.AbortRebaseAsync(repository.Path, confirmed: false, CancellationToken.None);
+        Assert.False(rejected.Succeeded);
+        Assert.Empty(runner.Calls);
+
+        var confirmed = await service.AbortRebaseAsync(repository.Path, confirmed: true, CancellationToken.None);
+        Assert.True(confirmed.Succeeded);
+        Assert.Contains(runner.Calls, call => call.Arguments == "rebase --abort");
+    }
+
     private static FakeGitCommandRunner CreateRepositoryRunner(
         IReadOnlyDictionary<string, string> heads,
         IReadOnlyDictionary<string, string>? svnTargets = null)
@@ -143,7 +262,7 @@ public sealed class GitSvnWorkspaceServiceTests
                 return Success("base");
             }
 
-            if (arguments.StartsWith("log --date=short --format=", StringComparison.Ordinal))
+            if (arguments.StartsWith("log --date=short ", StringComparison.Ordinal))
             {
                 return Success(head + "\u001f" + head + "\u001fKim\u001f2026-08-07\u001fCommit " + head);
             }
@@ -189,4 +308,35 @@ public sealed class GitSvnWorkspaceServiceTests
         !call.Arguments.Contains("--dry-run", StringComparison.Ordinal);
 
     private static GitCommandResult Success(string output) => new GitCommandResult(0, output, string.Empty);
+
+    private sealed class RebaseTestRepository : IDisposable
+    {
+        private RebaseTestRepository(string path)
+        {
+            Path = path;
+            GitDirectory = System.IO.Path.Combine(path, ".git");
+            Directory.CreateDirectory(System.IO.Path.Combine(GitDirectory, "rebase-merge"));
+        }
+
+        public string Path { get; }
+        public string GitDirectory { get; }
+
+        public static RebaseTestRepository Create()
+        {
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "GitSvnShuttleTests",
+                "rebase-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            return new RebaseTestRepository(path);
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+        }
+    }
 }
