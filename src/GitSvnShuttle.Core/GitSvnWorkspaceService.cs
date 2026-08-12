@@ -378,7 +378,7 @@ public sealed class GitSvnWorkspaceService
     {
         var result = await runner.RunAsync(
             snapshot.RepositoryPath,
-            new[] { "svn", "dcommit", snapshot.HeadHash },
+            new[] { "svn", "dcommit" },
             cancellationToken).ConfigureAwait(false);
         return ToOperationResult(snapshot.RepositoryPath, "SVN에 게시", result);
     }
@@ -407,7 +407,7 @@ public sealed class GitSvnWorkspaceService
 
         var dryRun = await runner.RunAsync(
             expected.RepositoryPath,
-            new[] { "svn", "dcommit", "--dry-run", expected.HeadHash },
+            new[] { "svn", "dcommit", "--dry-run" },
             cancellationToken).ConfigureAwait(false);
         if (!dryRun.Succeeded)
         {
