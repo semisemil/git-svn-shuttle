@@ -29,14 +29,44 @@ public sealed class GitSvnWorkspaceService
         string solutionDirectory,
         CancellationToken cancellationToken)
     {
-        var candidates = FindRepositoryDirectories(solutionDirectory);
+        return await DiscoverAsync(
+            solutionDirectory,
+            Array.Empty<string>(),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<GitSvnRepository>> DiscoverAsync(
+        string solutionDirectory,
+        IReadOnlyList<string> loadedProjectPaths,
+        CancellationToken cancellationToken)
+    {
+        if (loadedProjectPaths == null)
+        {
+            throw new ArgumentNullException(nameof(loadedProjectPaths));
+        }
+
+        var candidates = FindRepositoryDirectories(solutionDirectory)
+            .Select(path => new RepositoryCandidate(path, isExternalLink: false, linkedProjectPath: null))
+            .ToList();
+        var knownPaths = new HashSet<string>(
+            candidates.Select(candidate => candidate.Path),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var projectPath in loadedProjectPaths)
+        {
+            var external = FindExternalLinkedRepository(solutionDirectory, projectPath);
+            if (external != null && knownPaths.Add(external.Path))
+            {
+                candidates.Add(external);
+            }
+        }
+
         var repositories = new List<GitSvnRepository>();
 
         foreach (var candidate in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var config = await runner.RunAsync(
-                candidate,
+                candidate.Path,
                 new[] { "config", "--get-regexp", "^svn-remote\\." },
                 cancellationToken).ConfigureAwait(false);
 
@@ -45,7 +75,8 @@ public sealed class GitSvnWorkspaceService
                 continue;
             }
 
-            repositories.Add(await InspectAsync(candidate, cancellationToken).ConfigureAwait(false));
+            var inspected = await InspectAsync(candidate.Path, cancellationToken).ConfigureAwait(false);
+            repositories.Add(WithDiscoveryContext(inspected, candidate));
         }
 
         return repositories;
@@ -76,10 +107,37 @@ public sealed class GitSvnWorkspaceService
             return RepositoryWithProblem(repositoryPath, null, "Git 저장소 경로를 확인하지 못했습니다.");
         }
 
-        var operationProblem = FindOperationProblem(gitDirectory);
-        if (operationProblem != null)
+        if (IsRebaseInProgress(gitDirectory))
         {
-            return RepositoryWithProblem(repositoryPath, gitDirectory, operationProblem);
+            var conflicts = await GetConflictedFilesAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+            if (conflicts == null)
+            {
+                return RepositoryWithProblem(
+                    repositoryPath,
+                    gitDirectory,
+                    "rebase 충돌 파일을 확인하지 못했습니다.",
+                    isRebaseInProgress: true);
+            }
+
+            var canContinue = conflicts.Count == 0 &&
+                              await HasStagedChangesAsync(repositoryPath, cancellationToken).ConfigureAwait(false) == true;
+            var rebaseProblem = conflicts.Count > 0
+                ? "rebase 충돌을 해결하고 변경을 스테이징한 뒤 계속하세요."
+                : canContinue
+                    ? "충돌 해결이 스테이징되었습니다. rebase를 계속할 수 있습니다."
+                    : "rebase를 계속하려면 해결한 변경을 스테이징하세요.";
+            return RepositoryWithProblem(
+                repositoryPath,
+                gitDirectory,
+                rebaseProblem,
+                isRebaseInProgress: true,
+                conflictedFiles: conflicts,
+                canContinueRebase: canContinue);
+        }
+
+        if (File.Exists(Path.Combine(gitDirectory, "MERGE_HEAD")))
+        {
+            return RepositoryWithProblem(repositoryPath, gitDirectory, "merge가 진행 중입니다.");
         }
 
         var baselineHash = await FindSvnBaselineAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
@@ -122,6 +180,62 @@ public sealed class GitSvnWorkspaceService
             new[] { "svn", "rebase" },
             cancellationToken).ConfigureAwait(false);
         return ToOperationResult(repositoryPath, "SVN 변경 가져오기", result);
+    }
+
+    public async Task<OperationResult> ContinueRebaseAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
+    {
+        var gitDirectory = await GetGitDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (gitDirectory == null || !IsRebaseInProgress(gitDirectory))
+        {
+            return Failed(repositoryPath, "계속할 rebase가 없습니다.");
+        }
+
+        var conflicts = await GetConflictedFilesAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (conflicts == null)
+        {
+            return Failed(repositoryPath, "rebase 충돌 파일을 확인하지 못했습니다.");
+        }
+
+        if (conflicts.Count > 0)
+        {
+            return Failed(repositoryPath, "미해결 충돌이 남아 있어 rebase를 계속할 수 없습니다.");
+        }
+
+        if (await HasStagedChangesAsync(repositoryPath, cancellationToken).ConfigureAwait(false) != true)
+        {
+            return Failed(repositoryPath, "해결한 변경을 스테이징한 뒤 rebase를 계속하세요.");
+        }
+
+        var result = await runner.RunAsync(
+            repositoryPath,
+            new[] { "rebase", "--continue" },
+            cancellationToken).ConfigureAwait(false);
+        return ToOperationResult(repositoryPath, "rebase 계속", result);
+    }
+
+    public async Task<OperationResult> AbortRebaseAsync(
+        string repositoryPath,
+        bool confirmed,
+        CancellationToken cancellationToken)
+    {
+        if (!confirmed)
+        {
+            return Failed(repositoryPath, "사용자 확인 없이 rebase를 중단하지 않았습니다.");
+        }
+
+        var gitDirectory = await GetGitDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (gitDirectory == null || !IsRebaseInProgress(gitDirectory))
+        {
+            return Failed(repositoryPath, "중단할 rebase가 없습니다.");
+        }
+
+        var result = await runner.RunAsync(
+            repositoryPath,
+            new[] { "rebase", "--abort" },
+            cancellationToken).ConfigureAwait(false);
+        return ToOperationResult(repositoryPath, "rebase 중단", result);
     }
 
     public async Task<PublishPreparationResult> PrepareDcommitAsync(
@@ -356,6 +470,18 @@ public sealed class GitSvnWorkspaceService
             return Failed(repositoryPath, "커밋되지 않은 변경이 있어 실행하지 않았습니다.");
         }
 
+        var gitDirectory = await GetGitDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (gitDirectory == null)
+        {
+            return Failed(repositoryPath, "Git 저장소 경로를 확인하지 못했습니다.");
+        }
+
+        var operationProblem = FindOperationProblem(gitDirectory);
+        if (operationProblem != null)
+        {
+            return Failed(repositoryPath, operationProblem);
+        }
+
         var branch = await runner.RunAsync(
             repositoryPath,
             new[] { "symbolic-ref", "--quiet", "--short", "HEAD" },
@@ -462,6 +588,7 @@ public sealed class GitSvnWorkspaceService
             {
                 "log",
                 "--date=short",
+                "--encoding=UTF-8",
                 "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s",
                 baseline + "..HEAD",
             },
@@ -484,6 +611,7 @@ public sealed class GitSvnWorkspaceService
                 "show",
                 "-s",
                 "--date=short",
+                "--encoding=UTF-8",
                 "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s",
                 revision,
             },
@@ -510,6 +638,127 @@ public sealed class GitSvnWorkspaceService
             new[] { "log", "--grep=git-svn-id:", "--format=%H", "-1" },
             cancellationToken).ConfigureAwait(false);
         return FirstOutputLine(result);
+    }
+
+    private async Task<string?> GetGitDirectoryAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
+    {
+        var result = await runner.RunAsync(
+            repositoryPath,
+            new[] { "rev-parse", "--git-dir" },
+            cancellationToken).ConfigureAwait(false);
+        return result.Succeeded ? ResolveGitDirectory(repositoryPath, result.StandardOutput) : null;
+    }
+
+    private async Task<IReadOnlyList<string>?> GetConflictedFilesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
+    {
+        var result = await runner.RunAsync(
+            repositoryPath,
+            new[] { "diff", "--name-only", "--diff-filter=U", "-z" },
+            cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            return null;
+        }
+
+        return result.StandardOutput
+            .Split(new[] { '\0', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => path.Trim())
+            .Where(path => path.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private async Task<bool?> HasStagedChangesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
+    {
+        var result = await runner.RunAsync(
+            repositoryPath,
+            new[] { "diff", "--cached", "--quiet", "--exit-code" },
+            cancellationToken).ConfigureAwait(false);
+        return result.ExitCode == 0 ? false : result.ExitCode == 1 ? true : null;
+    }
+
+    private static RepositoryCandidate? FindExternalLinkedRepository(
+        string solutionDirectory,
+        string projectPath)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var absoluteProjectPath = Path.GetFullPath(projectPath);
+            var projectDirectory = Directory.Exists(absoluteProjectPath)
+                ? absoluteProjectPath
+                : Path.GetDirectoryName(absoluteProjectPath);
+            if (string.IsNullOrWhiteSpace(projectDirectory) || !Directory.Exists(projectDirectory))
+            {
+                return null;
+            }
+
+            var lexicalProjectDirectory = NormalizeDirectory(projectDirectory);
+            var physicalProjectDirectory = NormalizeDirectory(
+                WindowsPhysicalPathResolver.ResolveDirectory(projectDirectory));
+            var physicalSolutionDirectory = NormalizeDirectory(
+                WindowsPhysicalPathResolver.ResolveDirectory(solutionDirectory));
+            if (string.Equals(
+                    lexicalProjectDirectory,
+                    physicalProjectDirectory,
+                    StringComparison.OrdinalIgnoreCase) ||
+                IsWithinRoot(physicalSolutionDirectory, physicalProjectDirectory))
+            {
+                return null;
+            }
+
+            var repository = FindContainingRepositoryDirectory(physicalProjectDirectory);
+            return repository == null
+                ? null
+                : new RepositoryCandidate(repository, isExternalLink: true, absoluteProjectPath);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (SecurityException)
+        {
+            return null;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? FindContainingRepositoryDirectory(string startDirectory)
+    {
+        var current = new DirectoryInfo(startDirectory);
+        while (current != null)
+        {
+            if (Directory.Exists(Path.Combine(current.FullName, ".git")) ||
+                File.Exists(Path.Combine(current.FullName, ".git")))
+            {
+                return NormalizeDirectory(current.FullName);
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 
     private static IReadOnlyList<string> FindRepositoryDirectories(string rootPath)
@@ -699,6 +948,10 @@ public sealed class GitSvnWorkspaceService
         return null;
     }
 
+    private static bool IsRebaseInProgress(string gitDirectory) =>
+        Directory.Exists(Path.Combine(gitDirectory, "rebase-merge")) ||
+        Directory.Exists(Path.Combine(gitDirectory, "rebase-apply"));
+
     private static bool IsReparsePoint(string path)
     {
         try
@@ -733,14 +986,39 @@ public sealed class GitSvnWorkspaceService
         return candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static GitSvnRepository RepositoryWithProblem(string path, string? gitDirectory, string problem) =>
+    private static GitSvnRepository RepositoryWithProblem(
+        string path,
+        string? gitDirectory,
+        string problem,
+        bool isRebaseInProgress = false,
+        IReadOnlyList<string>? conflictedFiles = null,
+        bool canContinueRebase = false) =>
         new GitSvnRepository(
             GetRepositoryName(path),
             path,
             gitDirectory,
             null,
             Array.Empty<GitSvnCommit>(),
-            problem);
+            problem,
+            isRebaseInProgress,
+            conflictedFiles,
+            canContinueRebase);
+
+    private static GitSvnRepository WithDiscoveryContext(
+        GitSvnRepository repository,
+        RepositoryCandidate candidate) =>
+        new GitSvnRepository(
+            repository.Name,
+            repository.Path,
+            repository.GitDirectory,
+            repository.SvnBaseline,
+            repository.PendingCommits,
+            repository.Problem,
+            repository.IsRebaseInProgress,
+            repository.ConflictedFiles,
+            repository.CanContinueRebase,
+            candidate.IsExternalLink,
+            candidate.LinkedProjectPath);
 
     private static string GetRepositoryName(string path)
     {
@@ -766,4 +1044,18 @@ public sealed class GitSvnWorkspaceService
                     ? string.Empty
                     : Environment.NewLine + result.CombinedOutput)
                 : action + " 실패" + Environment.NewLine + result.CombinedOutput);
+
+    private sealed class RepositoryCandidate
+    {
+        public RepositoryCandidate(string path, bool isExternalLink, string? linkedProjectPath)
+        {
+            Path = NormalizeDirectory(path);
+            IsExternalLink = isExternalLink;
+            LinkedProjectPath = linkedProjectPath;
+        }
+
+        public string Path { get; }
+        public bool IsExternalLink { get; }
+        public string? LinkedProjectPath { get; }
+    }
 }

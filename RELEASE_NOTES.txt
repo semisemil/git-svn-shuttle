@@ -1,3 +1,9 @@
+Git-SVN Shuttle 0.3.4
+
+- 다른 Windows 언어 설정에서도 한글 커밋 작성자와 제목을 UTF-8로 표시합니다.
+- git svn rebase 충돌을 구분해 충돌 파일을 보여주고, 해결 후 계속하거나 확인 후 중단할 수 있습니다.
+- 솔루션에 정션으로 연결된 외부 저장소의 하위 프로젝트도 제한된 경로에서 안전하게 찾습니다.
+
 Git-SVN Shuttle 0.3.3
 
 - Visual Studio Marketplace의 한국어 짧은 설명이 깨지는 문제를 수정했습니다.

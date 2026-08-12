@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -11,7 +12,7 @@ using Task = System.Threading.Tasks.Task;
 namespace GitSvnShuttle.Vsix;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("Git-SVN Shuttle", "Git-SVN rebase and dcommit for Visual Studio", "0.3.3")]
+[InstalledProductRegistration("Git-SVN Shuttle", "Git-SVN rebase and dcommit for Visual Studio", "0.3.4")]
 [ProvideMenuResource("GitSvnShuttle.CTMENU", 1)]
 [ProvideToolWindow(typeof(GitSvnShuttleToolWindow), Style = VsDockStyle.Tabbed, Window = ToolWindowGuids80.SolutionExplorer)]
 [Guid(PackageGuidString)]
@@ -54,6 +55,40 @@ public sealed class GitSvnShuttlePackage : AsyncPackage
 
         ErrorHandler.ThrowOnFailure(solution.GetSolutionInfo(out var directory, out _, out _));
         return string.IsNullOrWhiteSpace(directory) ? null : directory;
+    }
+
+    internal async Task<IReadOnlyList<string>> GetLoadedProjectPathsAsync(CancellationToken cancellationToken)
+    {
+        await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        var solution = await GetServiceAsync(typeof(SVsSolution)) as IVsSolution;
+        if (solution == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var projectType = Guid.Empty;
+        ErrorHandler.ThrowOnFailure(solution.GetProjectEnum(
+            (uint)__VSENUMPROJFLAGS.EPF_LOADEDINSOLUTION,
+            ref projectType,
+            out var enumerator));
+        if (enumerator == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var paths = new List<string>();
+        var hierarchies = new IVsHierarchy[1];
+        while (enumerator.Next(1, hierarchies, out var fetched) == VSConstants.S_OK && fetched == 1)
+        {
+            if (hierarchies[0] is IVsProject project &&
+                ErrorHandler.Succeeded(project.GetMkDocument(VSConstants.VSITEMID_ROOT, out var projectPath)) &&
+                !string.IsNullOrWhiteSpace(projectPath))
+            {
+                paths.Add(projectPath);
+            }
+        }
+
+        return paths;
     }
 
     internal async Task<IVsOutputWindowPane?> GetOutputPaneAsync(CancellationToken cancellationToken)
