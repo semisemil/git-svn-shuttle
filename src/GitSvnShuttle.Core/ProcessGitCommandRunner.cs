@@ -14,6 +14,7 @@ public sealed class ProcessGitCommandRunner : IGitCommandRunner
     private static readonly TimeSpan ReadCommandTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan SvnCommandTimeout = TimeSpan.FromMinutes(30);
     private readonly string gitExecutablePath;
+    private static readonly Encoding GitOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     public ProcessGitCommandRunner(string gitExecutablePath)
     {
@@ -39,10 +40,18 @@ public sealed class ProcessGitCommandRunner : IGitCommandRunner
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = GitOutputEncoding,
+            StandardErrorEncoding = GitOutputEncoding,
             CreateNoWindow = true,
         };
         startInfo.EnvironmentVariables["GIT_TERMINAL_PROMPT"] = "0";
         startInfo.EnvironmentVariables["GCM_INTERACTIVE"] = "Never";
+        if (arguments.Count >= 2 &&
+            string.Equals(arguments[0], "rebase", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(arguments[1], "--continue", StringComparison.OrdinalIgnoreCase))
+        {
+            startInfo.EnvironmentVariables["GIT_EDITOR"] = "true";
+        }
 
         using (var timeoutSource = new CancellationTokenSource(GetTimeout(arguments)))
         using (var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(

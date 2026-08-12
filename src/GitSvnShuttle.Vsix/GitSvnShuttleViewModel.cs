@@ -361,14 +361,20 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
             }
 
             StatusText = "Git-SVN 저장소를 찾는 중입니다.";
-            var repositories = await WorkspaceService.DiscoverAsync(solutionDirectory, OperationToken);
+            var projectPaths = await package.GetLoadedProjectPathsAsync(OperationToken);
+            var repositories = await WorkspaceService.DiscoverAsync(
+                solutionDirectory,
+                projectPaths,
+                OperationToken);
             Repositories.Clear();
             foreach (var repository in repositories)
             {
                 Repositories.Add(new RepositoryViewModel(
                     repository,
                     () => RunRebaseOneAsync(repository.Path),
-                    () => ShowPublishOneAsync(repository.Path)));
+                    () => ShowPublishOneAsync(repository.Path),
+                    () => ContinueRebaseOneAsync(repository.Path),
+                    () => AbortRebaseOneAsync(repository.Path)));
             }
 
             changeMonitor.Configure(solutionDirectory, repositories);
@@ -431,6 +437,52 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         StatusText = failure == null
             ? "모든 저장소의 SVN 변경을 가져왔습니다."
             : SensitiveTextRedactor.Redact(failure.Message) + " 이후 저장소는 실행하지 않았습니다.";
+    }
+
+    private async Task ContinueRebaseOneAsync(string repositoryPath)
+    {
+        OperationResult? result = null;
+        await RunBusyAsync(async () =>
+        {
+            StatusText = "rebase를 계속하는 중입니다: " + repositoryPath;
+            result = await WorkspaceService.ContinueRebaseAsync(repositoryPath, OperationToken);
+            await LogAsync(result);
+        });
+
+        await RefreshAsync();
+        if (result != null)
+        {
+            StatusText = SensitiveTextRedactor.Redact(result.Message);
+        }
+    }
+
+    private async Task AbortRebaseOneAsync(string repositoryPath)
+    {
+        var confirmed = MessageBox.Show(
+            "진행 중인 rebase를 중단하고 시작 전 상태로 되돌리시겠습니까?",
+            "rebase 중단 확인",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No) == MessageBoxResult.Yes;
+        if (!confirmed)
+        {
+            StatusText = "rebase 중단을 취소했습니다.";
+            return;
+        }
+
+        OperationResult? result = null;
+        await RunBusyAsync(async () =>
+        {
+            StatusText = "rebase를 중단하는 중입니다: " + repositoryPath;
+            result = await WorkspaceService.AbortRebaseAsync(repositoryPath, confirmed: true, OperationToken);
+            await LogAsync(result);
+        });
+
+        await RefreshAsync();
+        if (result != null)
+        {
+            StatusText = SensitiveTextRedactor.Redact(result.Message);
+        }
     }
 
     private async Task ShowPublishAllAsync()
@@ -640,7 +692,12 @@ internal sealed class RepositoryViewModel : INotifyPropertyChanged
 {
     private bool isExpanded = true;
 
-    public RepositoryViewModel(GitSvnRepository repository, Func<Task> rebase, Func<Task> dcommit)
+    public RepositoryViewModel(
+        GitSvnRepository repository,
+        Func<Task> rebase,
+        Func<Task> dcommit,
+        Func<Task> continueRebase,
+        Func<Task> abortRebase)
     {
         Name = repository.Name;
         Path = repository.Path;
@@ -648,8 +705,17 @@ internal sealed class RepositoryViewModel : INotifyPropertyChanged
         SvnBaseline = repository.SvnBaseline;
         IsReady = repository.IsReady;
         Problem = repository.Problem ?? string.Empty;
+        IsRebaseInProgress = repository.IsRebaseInProgress;
+        ConflictedFiles = repository.ConflictedFiles;
+        CanContinueRebase = repository.CanContinueRebase;
+        IsExternalLink = repository.IsExternalLink;
+        LinkedProjectPath = repository.LinkedProjectPath ?? string.Empty;
         RebaseCommand = new AsyncCommand(rebase, () => repository.IsReady);
         DcommitCommand = new AsyncCommand(dcommit, () => repository.IsReady && repository.PendingCommits.Count > 0);
+        ContinueRebaseCommand = new AsyncCommand(
+            continueRebase,
+            () => repository.IsRebaseInProgress && repository.CanContinueRebase);
+        AbortRebaseCommand = new AsyncCommand(abortRebase, () => repository.IsRebaseInProgress);
     }
 
     public string Name { get; }
@@ -658,6 +724,13 @@ internal sealed class RepositoryViewModel : INotifyPropertyChanged
     public GitSvnCommit? SvnBaseline { get; }
     public bool IsReady { get; }
     public string Problem { get; }
+    public bool IsRebaseInProgress { get; }
+    public IReadOnlyList<string> ConflictedFiles { get; }
+    public bool CanContinueRebase { get; }
+    public bool IsExternalLink { get; }
+    public string LinkedProjectPath { get; }
+    public string PathText => IsExternalLink ? "실제 작업 경로: " + Path : Path;
+    public string LinkedProjectPathText => "로드된 프로젝트: " + LinkedProjectPath;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public bool IsExpanded
@@ -681,11 +754,18 @@ internal sealed class RepositoryViewModel : INotifyPropertyChanged
     public Visibility PendingCommitsVisibility => PendingCommits.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     public Visibility NoPendingCommitsVisibility => PendingCommits.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     public Visibility BaselineVisibility => SvnBaseline == null ? Visibility.Collapsed : Visibility.Visible;
-    public string ProblemLabel => Problem == "커밋되지 않은 변경이 있습니다."
-        ? "커밋되지 않은 변경"
-        : "작업 필요";
+    public Visibility RebaseRecoveryVisibility => IsRebaseInProgress ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ConflictFilesVisibility => ConflictedFiles.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility ExternalLinkVisibility => IsExternalLink ? Visibility.Visible : Visibility.Collapsed;
+    public string ProblemLabel => IsRebaseInProgress
+        ? ConflictedFiles.Count > 0 ? "rebase 충돌" : "rebase 진행 중"
+        : Problem == "커밋되지 않은 변경이 있습니다."
+            ? "커밋되지 않은 변경"
+            : "작업 필요";
     public AsyncCommand RebaseCommand { get; }
     public AsyncCommand DcommitCommand { get; }
+    public AsyncCommand ContinueRebaseCommand { get; }
+    public AsyncCommand AbortRebaseCommand { get; }
 }
 
 internal sealed class PublishCommitViewModel
