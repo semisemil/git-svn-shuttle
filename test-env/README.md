@@ -51,7 +51,7 @@ To exercise the same real Git-SVN round trip without Visual Studio:
 .\test-env\smoke.ps1
 ```
 
-The smoke test mutates the fixture by publishing both local commits. Run setup again with `-Reset` to restore the initial UI test state.
+The smoke test runs the product `GitSvnWorkspaceService` and `ProcessGitCommandRunner`, then verifies that dcommit rewrites each current branch to a `git-svn-id` commit with no pending commits. It mutates the fixture by publishing both local commits. Run setup again with `-Reset` to restore the initial UI test state.
 
 To stop the local test server without removing its files:
 
