@@ -80,7 +80,7 @@ public sealed class GitSvnWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task DcommitPreparedAllAsync_PreflightsEverySnapshotBeforePublishingPinnedHeads()
+    public async Task DcommitPreparedAllAsync_PreflightsEverySnapshotBeforePublishingCurrentHeads()
     {
         var repositoryA = "C:\\work\\a";
         var repositoryB = "C:\\work\\b";
@@ -104,8 +104,10 @@ public sealed class GitSvnWorkspaceServiceTests
         var firstPublish = runner.Calls.FindIndex(IsActualDcommit);
         var lastDryRun = runner.Calls.FindLastIndex(call => call.Arguments.Contains("svn dcommit --dry-run"));
         Assert.True(firstPublish > lastDryRun);
-        Assert.Contains(runner.Calls, call => call.Arguments == "svn dcommit commit-a");
-        Assert.Contains(runner.Calls, call => call.Arguments == "svn dcommit commit-b");
+        Assert.Contains(runner.Calls, call =>
+            call.WorkingDirectory == repositoryA && call.Arguments == "svn dcommit");
+        Assert.Contains(runner.Calls, call =>
+            call.WorkingDirectory == repositoryB && call.Arguments == "svn dcommit");
     }
 
     [Fact]
@@ -288,12 +290,12 @@ public sealed class GitSvnWorkspaceServiceTests
                 return Success("main");
             }
 
-            if (arguments.StartsWith("svn dcommit --dry-run ", StringComparison.Ordinal))
+            if (arguments == "svn dcommit --dry-run")
             {
                 return Success("diff-tree " + head);
             }
 
-            if (arguments.StartsWith("svn dcommit ", StringComparison.Ordinal))
+            if (arguments == "svn dcommit")
             {
                 return Success("Committed " + head);
             }
@@ -304,8 +306,7 @@ public sealed class GitSvnWorkspaceServiceTests
     }
 
     private static bool IsActualDcommit((string WorkingDirectory, string Arguments) call) =>
-        call.Arguments.StartsWith("svn dcommit ", StringComparison.Ordinal) &&
-        !call.Arguments.Contains("--dry-run", StringComparison.Ordinal);
+        call.Arguments == "svn dcommit";
 
     private static GitCommandResult Success(string output) => new GitCommandResult(0, output, string.Empty);
 
