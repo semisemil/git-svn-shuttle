@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace GitSvnShuttle.Core;
@@ -28,7 +29,12 @@ public sealed class GitSvnRepository
         string? gitDirectory,
         GitSvnCommit? svnBaseline,
         IReadOnlyList<GitSvnCommit> pendingCommits,
-        string? problem)
+        string? problem,
+        bool isRebaseInProgress = false,
+        IReadOnlyList<string>? conflictedFiles = null,
+        bool canContinueRebase = false,
+        bool isExternalLink = false,
+        string? linkedProjectPath = null)
     {
         Name = name;
         Path = path;
@@ -36,6 +42,11 @@ public sealed class GitSvnRepository
         SvnBaseline = svnBaseline;
         PendingCommits = pendingCommits;
         Problem = problem;
+        IsRebaseInProgress = isRebaseInProgress;
+        ConflictedFiles = conflictedFiles ?? Array.Empty<string>();
+        CanContinueRebase = canContinueRebase;
+        IsExternalLink = isExternalLink;
+        LinkedProjectPath = linkedProjectPath;
     }
 
     public string Name { get; }
@@ -44,7 +55,12 @@ public sealed class GitSvnRepository
     public GitSvnCommit? SvnBaseline { get; }
     public IReadOnlyList<GitSvnCommit> PendingCommits { get; }
     public string? Problem { get; }
-    public bool IsReady => string.IsNullOrWhiteSpace(Problem);
+    public bool IsRebaseInProgress { get; }
+    public IReadOnlyList<string> ConflictedFiles { get; }
+    public bool CanContinueRebase { get; }
+    public bool IsExternalLink { get; }
+    public string? LinkedProjectPath { get; }
+    public bool IsReady => string.IsNullOrWhiteSpace(Problem) && !IsRebaseInProgress;
 }
 
 public sealed class GitSvnPublishSnapshot

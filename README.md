@@ -11,6 +11,7 @@ It fills the gap left after Visual Studio's built-in Git UI has staged and commi
 - **Get from SVN** runs `git svn rebase`.
 - **Publish to SVN** previews local commits and runs `git svn dcommit`.
 - The solution root and nested Git-SVN repositories are discovered and processed sequentially.
+- Loaded projects linked through directory junctions can resolve their external Git-SVN repository root without recursively scanning arbitrary junction targets.
 
 ## Current MVP
 
@@ -20,6 +21,8 @@ Open **Tools > Git-SVN Shuttle** in Visual Studio. The tool window shows every G
 - The server marker separates them from the last commit already represented in SVN.
 
 Uncommitted file changes are shown separately in the repository header. They are not part of the dcommit list, and that repository's action buttons remain disabled until the changes are committed or discarded.
+
+If `git svn rebase` stops on conflicts, the repository shows the unresolved files separately. Resolve and stage them with Visual Studio's Git tools, then continue the rebase from Git-SVN Shuttle, or explicitly confirm that you want to abort it.
 
 Before a rebase, the extension requires a clean working tree and an attached branch. Before dcommit, it additionally rejects merge commits and runs `git svn dcommit --dry-run`. The confirmation records the exact HEAD, pending commit hashes, SVN baseline, and SVN configuration. Confirming revalidates that snapshot and publishes the pinned HEAD; any mismatch aborts the operation. **Publish all** preflights every repository before publishing the first one, then stops at the first failure. SVN cannot make publishing across multiple repositories atomic, so earlier successful dcommits cannot be rolled back automatically.
 
@@ -37,6 +40,8 @@ The root repository is processed first, followed by nested repositories in path 
 6. Use the download icon for one repository or **모두 받기** before publishing.
 7. Use an upload icon or **SVN에 게시**. Confirm the SVN destination and exact commits in the confirmation window before starting. If HEAD, pending commits, the SVN baseline, or SVN configuration changes, publishing stops and requires a new confirmation.
 8. Read detailed command output under **View > Output > Git-SVN Shuttle**.
+
+When a loaded project is linked through a directory junction, the repository card identifies it as an external link and shows the physical Git working path used for Git-SVN operations.
 
 While a Git-SVN command is running, use **취소** in the command bar to request cancellation.
 
@@ -69,6 +74,7 @@ The configured runtime path must be absolute. UI changes apply immediately; an e
 ## Security boundaries
 
 - Discovery skips directory junctions and other reparse-point children and stops at a finite directory limit.
+- External repository resolution starts only from paths of projects loaded by Visual Studio, resolves one physical path, and does not recursively traverse arbitrary junction targets.
 - Publish authorization uses an immutable snapshot and a pinned commit hash rather than only a repository path.
 - SVN destinations are shown with URL credentials removed.
 - Credential-shaped values are removed from Visual Studio Output logs.
