@@ -76,7 +76,10 @@ public sealed class GitSvnWorkspaceService
             }
 
             var inspected = await InspectAsync(candidate.Path, cancellationToken).ConfigureAwait(false);
-            repositories.Add(WithDiscoveryContext(inspected, candidate));
+            repositories.Add(WithDiscoveryContext(
+                inspected,
+                candidate,
+                ExtractSvnTargets(config.StandardOutput)));
         }
 
         return repositories;
@@ -257,6 +260,43 @@ public sealed class GitSvnWorkspaceService
             : new PublishPreparationResult(validation, null);
     }
 
+    public async Task<PublishBatchPreparationResult> PrepareDcommitAllAsync(
+        IReadOnlyList<string> repositoryPaths,
+        CancellationToken cancellationToken,
+        IProgress<PublishProgress>? progress = null)
+    {
+        if (repositoryPaths == null)
+        {
+            throw new ArgumentNullException(nameof(repositoryPaths));
+        }
+
+        var snapshots = new List<GitSvnPublishSnapshot>();
+        for (var index = 0; index < repositoryPaths.Count; index++)
+        {
+            var repositoryPath = repositoryPaths[index];
+            progress?.Report(new PublishProgress(
+                PublishProgressPhase.Preparing,
+                repositoryPath,
+                repositoryPath,
+                index,
+                repositoryPaths.Count));
+            var preparation = await PrepareDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+            if (!preparation.Succeeded)
+            {
+                return new PublishBatchPreparationResult(
+                    preparation.Outcome,
+                    Array.Empty<GitSvnPublishSnapshot>());
+            }
+
+            snapshots.Add(preparation.Snapshot!);
+        }
+
+        var outcomePath = snapshots.Count == 0 ? string.Empty : snapshots[0].RepositoryPath;
+        return new PublishBatchPreparationResult(
+            new OperationResult(outcomePath, true, "선택한 저장소의 게시 전 확인 완료"),
+            snapshots);
+    }
+
     public async Task<OperationResult> DcommitPreparedAsync(
         GitSvnPublishSnapshot snapshot,
         CancellationToken cancellationToken)
@@ -327,6 +367,117 @@ public sealed class GitSvnWorkspaceService
         return results;
     }
 
+    public async Task<PublishBatchResult> DcommitPreparedBatchAsync(
+        IReadOnlyList<GitSvnPublishSnapshot> snapshots,
+        IProgress<PublishProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (snapshots == null)
+        {
+            throw new ArgumentNullException(nameof(snapshots));
+        }
+
+        var outcomes = new PublishRepositoryOutcome?[snapshots.Count];
+        var activeIndex = -1;
+        try
+        {
+            // Preserve the all-dry-runs-before-any-publish protection from DcommitPreparedAllAsync.
+            for (var index = 0; index < snapshots.Count; index++)
+            {
+                activeIndex = index;
+                var snapshot = snapshots[index];
+                ReportPublishProgress(progress, PublishProgressPhase.Revalidating, snapshot, index, snapshots.Count);
+                var validation = await ValidatePreparedSnapshotAsync(
+                        snapshot,
+                        runDryRun: true,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!validation.Succeeded)
+                {
+                    outcomes[index] = ToPublishOutcome(snapshot, PublishOutcomeKind.Failed, validation.Message);
+                    return CompletePublishOutcomes(snapshots, outcomes);
+                }
+            }
+
+            for (var index = 0; index < snapshots.Count; index++)
+            {
+                activeIndex = index;
+                var snapshot = snapshots[index];
+                ReportPublishProgress(progress, PublishProgressPhase.Revalidating, snapshot, index, snapshots.Count);
+                var validation = await ValidatePreparedSnapshotAsync(
+                        snapshot,
+                        runDryRun: false,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!validation.Succeeded)
+                {
+                    outcomes[index] = ToPublishOutcome(snapshot, PublishOutcomeKind.Failed, validation.Message);
+                    return CompletePublishOutcomes(snapshots, outcomes);
+                }
+
+                ReportPublishProgress(progress, PublishProgressPhase.Publishing, snapshot, index, snapshots.Count);
+                var result = await ExecutePreparedDcommitAsync(snapshot, cancellationToken).ConfigureAwait(false);
+                outcomes[index] = ToPublishOutcome(
+                    snapshot,
+                    result.Succeeded ? PublishOutcomeKind.Succeeded : PublishOutcomeKind.Failed,
+                    result.Message);
+                if (!result.Succeeded)
+                {
+                    return CompletePublishOutcomes(snapshots, outcomes);
+                }
+            }
+
+            return CompletePublishOutcomes(snapshots, outcomes);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (activeIndex >= 0 && activeIndex < snapshots.Count && outcomes[activeIndex] == null)
+            {
+                outcomes[activeIndex] = ToPublishOutcome(
+                    snapshots[activeIndex],
+                    PublishOutcomeKind.Cancelled,
+                    "사용자가 현재 게시 작업을 취소했습니다.");
+            }
+
+            return CompletePublishOutcomes(snapshots, outcomes);
+        }
+    }
+
+    private static void ReportPublishProgress(
+        IProgress<PublishProgress>? progress,
+        PublishProgressPhase phase,
+        GitSvnPublishSnapshot snapshot,
+        int index,
+        int count) =>
+        progress?.Report(new PublishProgress(
+            phase,
+            snapshot.RepositoryName,
+            snapshot.RepositoryPath,
+            index,
+            count));
+
+    private static PublishRepositoryOutcome ToPublishOutcome(
+        GitSvnPublishSnapshot snapshot,
+        PublishOutcomeKind kind,
+        string message) =>
+        new PublishRepositoryOutcome(snapshot.RepositoryName, snapshot.RepositoryPath, kind, message);
+
+    private static PublishBatchResult CompletePublishOutcomes(
+        IReadOnlyList<GitSvnPublishSnapshot> snapshots,
+        IReadOnlyList<PublishRepositoryOutcome?> outcomes)
+    {
+        var completed = new PublishRepositoryOutcome[snapshots.Count];
+        for (var index = 0; index < snapshots.Count; index++)
+        {
+            completed[index] = outcomes[index] ?? ToPublishOutcome(
+                snapshots[index],
+                PublishOutcomeKind.NotRun,
+                "앞선 저장소 작업이 완료되지 않아 실행하지 않았습니다.");
+        }
+
+        return new PublishBatchResult(completed);
+    }
+
     public async Task<OperationResult> DcommitAsync(string repositoryPath, CancellationToken cancellationToken)
     {
         var preparation = await PrepareDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
@@ -357,19 +508,13 @@ public sealed class GitSvnWorkspaceService
         IReadOnlyList<string> repositoryPaths,
         CancellationToken cancellationToken)
     {
-        var snapshots = new List<GitSvnPublishSnapshot>();
-        foreach (var repositoryPath in repositoryPaths)
+        var preparation = await PrepareDcommitAllAsync(repositoryPaths, cancellationToken).ConfigureAwait(false);
+        if (!preparation.Succeeded)
         {
-            var preparation = await PrepareDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-            if (!preparation.Succeeded)
-            {
-                return new[] { preparation.Outcome };
-            }
-
-            snapshots.Add(preparation.Snapshot!);
+            return new[] { preparation.Outcome };
         }
 
-        return await DcommitPreparedAllAsync(snapshots, cancellationToken).ConfigureAwait(false);
+        return await DcommitPreparedAllAsync(preparation.Snapshots, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<OperationResult> ExecutePreparedDcommitAsync(
@@ -589,6 +734,7 @@ public sealed class GitSvnWorkspaceService
                 "log",
                 "--date=short",
                 "--encoding=UTF-8",
+                "--reverse",
                 "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s",
                 baseline + "..HEAD",
             },
@@ -1006,7 +1152,8 @@ public sealed class GitSvnWorkspaceService
 
     private static GitSvnRepository WithDiscoveryContext(
         GitSvnRepository repository,
-        RepositoryCandidate candidate) =>
+        RepositoryCandidate candidate,
+        IReadOnlyList<string> svnTargets) =>
         new GitSvnRepository(
             repository.Name,
             repository.Path,
@@ -1018,7 +1165,8 @@ public sealed class GitSvnWorkspaceService
             repository.ConflictedFiles,
             repository.CanContinueRebase,
             candidate.IsExternalLink,
-            candidate.LinkedProjectPath);
+            candidate.LinkedProjectPath,
+            svnTargets);
 
     private static string GetRepositoryName(string path)
     {

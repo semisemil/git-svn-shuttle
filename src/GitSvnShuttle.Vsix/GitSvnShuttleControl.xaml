@@ -20,6 +20,9 @@
     <Geometry x:Key="FolderGeometry">M 2,5 L 8,5 10,7 18,7 18,17 2,17 Z M 2,7 L 2,4 8,4 10,6</Geometry>
     <Geometry x:Key="SearchGeometry">M 9,3 A 6,6 0 1 1 9,15 A 6,6 0 1 1 9,3 M 13.5,13.5 L 18,18</Geometry>
     <Geometry x:Key="ResetGeometry">M 5,6 L 2,6 2,3 M 2,6 A 8,8 0 1 1 3.5,14.5</Geometry>
+    <Geometry x:Key="CloseGeometry">M 4,4 L 16,16 M 16,4 L 4,16</Geometry>
+    <Geometry x:Key="StopGeometry">M 5,5 L 15,5 15,15 5,15 Z</Geometry>
+    <Geometry x:Key="EyeGeometry">M 2,10 C 5,4 15,4 18,10 C 15,16 5,16 2,10 M 10,7 A 3,3 0 1 1 10,13 A 3,3 0 1 1 10,7</Geometry>
 
     <Style x:Key="ModernButton" TargetType="Button">
       <Setter Property="Foreground" Value="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}" />
@@ -57,6 +60,11 @@
                         Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxMouseDownBackgroundKey}}" />
                 <Setter TargetName="ButtonBorder" Property="BorderBrush"
                         Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxMouseDownBorderKey}}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="ButtonBorder" Property="BorderBrush"
+                        Value="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
+                <Setter TargetName="ButtonBorder" Property="BorderThickness" Value="2" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Foreground"
@@ -108,6 +116,11 @@
                 <Setter TargetName="ToggleBorder" Property="Background"
                         Value="{DynamicResource {x:Static shell:VsBrushes.ToolWindowButtonHoverActiveKey}}" />
               </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="ToggleBorder" Property="BorderBrush"
+                        Value="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
+                <Setter TargetName="ToggleBorder" Property="BorderThickness" Value="2" />
+              </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
@@ -135,41 +148,45 @@
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
           <Button Style="{StaticResource IconButton}" Command="{Binding ToggleRuntimeSettingsCommand}"
-                  ToolTip="Git-SVN 실행 환경 설정" Margin="0,0,8,0">
+                  ToolTip="Git-SVN 실행 환경 설정" AutomationProperties.Name="Git-SVN 실행 환경 설정"
+                  Margin="0,0,6,0">
             <Path Data="{StaticResource SettingsGeometry}" Stretch="Uniform" StrokeThickness="1.4"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
           </Button>
           <Button Style="{StaticResource IconButton}" Command="{Binding RefreshCommand}"
-                  ToolTip="상태 새로 고침" Margin="0,0,8,0">
+                  ToolTip="저장소 상태 새로 고침" AutomationProperties.Name="저장소 상태 새로 고침"
+                  Margin="0,0,6,0">
             <Path Data="{StaticResource RefreshGeometry}" Stretch="Uniform" StrokeThickness="1.7"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
           </Button>
-          <Button Style="{StaticResource ModernButton}" Command="{Binding CancelOperationCommand}"
-                  Visibility="{Binding CancelOperationVisibility}" Content="취소"
-                  ToolTip="현재 Git-SVN 작업 취소" Margin="0,0,8,0" />
-          <Button Style="{StaticResource ModernButton}" Command="{Binding RebaseAllCommand}"
-                  ToolTip="모든 저장소에서 SVN 변경 받기" Margin="0,0,8,0">
-            <StackPanel Orientation="Horizontal">
-              <Path Width="18" Height="18" Data="{StaticResource DownloadGeometry}" Stretch="Uniform"
-                    StrokeThickness="1.8"
-                    Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-              <TextBlock Text="모두 받기" Margin="7,0,0,0" VerticalAlignment="Center" />
-            </StackPanel>
+          <Button Style="{StaticResource IconButton}" Command="{Binding CancelOperationCommand}"
+                  Visibility="{Binding CancelOperationVisibility}"
+                  ToolTip="현재 Git-SVN 작업 취소" AutomationProperties.Name="현재 Git-SVN 작업 취소"
+                  Margin="0,0,6,0">
+            <Path Data="{StaticResource StopGeometry}" Stretch="Uniform" StrokeThickness="1.6"
+                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
           </Button>
-          <Button Style="{StaticResource PrimaryButton}" Command="{Binding DcommitAllCommand}"
-                  ToolTip="게시할 커밋을 확인한 뒤 SVN에 게시">
-            <StackPanel Orientation="Horizontal">
-              <Path Width="18" Height="18" Data="{StaticResource UploadGeometry}" Stretch="Uniform"
+          <Button Style="{StaticResource IconButton}" Command="{Binding RebaseAllCommand}"
+                  ToolTip="모든 저장소에서 SVN 변경 받기"
+                  AutomationProperties.Name="모든 저장소에서 SVN 변경 받기" Margin="0,0,6,0">
+            <Path Data="{StaticResource DownloadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
+                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+          </Button>
+          <Button Style="{StaticResource PrimaryIconButton}" Command="{Binding DcommitAllCommand}"
+                  ToolTip="{Binding TopPublishSelectionActionName}"
+                  AutomationProperties.Name="{Binding TopPublishSelectionActionName}">
+            <Grid>
+              <Path Data="{StaticResource UploadGeometry}" Stretch="Uniform"
                     StrokeThickness="1.8"
                     Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-              <TextBlock Text="SVN에 게시" Margin="7,0,0,0" VerticalAlignment="Center" />
-              <Border MinWidth="20" Height="20" CornerRadius="10" Margin="7,0,0,0" Padding="5,0"
+              <Border MinWidth="18" Height="18" CornerRadius="9" Margin="18,-12,-12,18" Padding="4,0"
+                      Visibility="{Binding SelectionBadgeVisibility}"
                       Background="{DynamicResource {x:Static shell:VsBrushes.HighlightTextKey}}">
-                <TextBlock Text="{Binding TotalPendingCommits, Mode=OneWay}" FontSize="11" FontWeight="Bold"
+                <TextBlock Text="{Binding SelectedRepositoryCount, Mode=OneWay}" FontSize="11" FontWeight="Bold"
                            Foreground="{DynamicResource {x:Static shell:VsBrushes.AccentDarkKey}}"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
               </Border>
-            </StackPanel>
+            </Grid>
           </Button>
         </StackPanel>
 
@@ -230,22 +247,26 @@
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
           <Button Style="{StaticResource IconButton}" Command="{Binding ChooseGitExecutableCommand}"
-                  ToolTip="git.exe 직접 선택" Margin="0,0,6,0">
+                  ToolTip="Git 실행 파일 직접 선택" AutomationProperties.Name="Git 실행 파일 직접 선택"
+                  Margin="0,0,6,0">
             <Path Data="{StaticResource FolderGeometry}" Stretch="Uniform" StrokeThickness="1.6"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
           </Button>
           <Button Style="{StaticResource IconButton}" Command="{Binding AutoDetectRuntimeCommand}"
-                  ToolTip="사용 가능한 Git-SVN 자동 검색" Margin="0,0,6,0">
+                  ToolTip="사용 가능한 Git-SVN 자동 검색"
+                  AutomationProperties.Name="사용 가능한 Git-SVN 자동 검색" Margin="0,0,6,0">
             <Path Data="{StaticResource SearchGeometry}" Stretch="Uniform" StrokeThickness="1.6"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
           </Button>
           <Button Style="{StaticResource IconButton}" Command="{Binding RecheckRuntimeCommand}"
-                  ToolTip="현재 경로 다시 검사" Margin="0,0,6,0">
+                  ToolTip="현재 Git 실행 경로 다시 검사"
+                  AutomationProperties.Name="현재 Git 실행 경로 다시 검사" Margin="0,0,6,0">
             <Path Data="{StaticResource RefreshGeometry}" Stretch="Uniform" StrokeThickness="1.7"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
           </Button>
           <Button Style="{StaticResource IconButton}" Command="{Binding ResetRuntimeCommand}"
-                  ToolTip="사용자 지정 경로를 지우고 기본값으로 재설정">
+                  ToolTip="Git 실행 경로를 기본값으로 재설정"
+                  AutomationProperties.Name="Git 실행 경로를 기본값으로 재설정">
             <Path Data="{StaticResource ResetGeometry}" Stretch="Uniform" StrokeThickness="1.6"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
           </Button>
@@ -254,7 +275,52 @@
     </Border>
 
     <Grid Grid.Row="2" Visibility="{Binding WorkspaceVisibility}">
-      <Border Visibility="{Binding EmptyStateVisibility}" Padding="20" VerticalAlignment="Top">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <Border Grid.Row="0" Margin="8,8,8,0" Padding="10,7" CornerRadius="6"
+              Background="{DynamicResource {x:Static shell:VsBrushes.CommandBarGradientBeginKey}}"
+              BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}"
+              BorderThickness="1">
+        <DockPanel LastChildFill="True">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            <Button Style="{StaticResource IconButton}" Command="{Binding ClearSelectionCommand}"
+                    ToolTip="현재 게시 선택 해제" AutomationProperties.Name="현재 게시 선택 해제"
+                    Margin="0,0,6,0">
+              <Path Data="{StaticResource CloseGeometry}" Stretch="Uniform" StrokeThickness="1.8"
+                    Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+            </Button>
+            <Button Style="{StaticResource PrimaryIconButton}" Command="{Binding DcommitAllCommand}"
+                    ToolTip="{Binding SummaryPublishSelectionActionName}"
+                    AutomationProperties.Name="{Binding SummaryPublishSelectionActionName}">
+              <Grid>
+                <Path Data="{StaticResource UploadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
+                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                <Border MinWidth="18" Height="18" CornerRadius="9" Margin="18,-12,-12,18" Padding="4,0"
+                        Visibility="{Binding SelectionBadgeVisibility}"
+                        Background="{DynamicResource {x:Static shell:VsBrushes.HighlightTextKey}}">
+                  <TextBlock Text="{Binding SelectedRepositoryCount, Mode=OneWay}"
+                             FontSize="11" FontWeight="Bold"
+                             Foreground="{DynamicResource {x:Static shell:VsBrushes.AccentDarkKey}}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+              </Grid>
+            </Button>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <CheckBox IsThreeState="True" IsChecked="{Binding AllSelectionState, Mode=OneWay}"
+                      Command="{Binding ToggleAllSelectionCommand}"
+                      ToolTip="게시 가능한 저장소 전체 선택 또는 해제"
+                      AutomationProperties.Name="게시 가능한 저장소 전체 선택" />
+            <TextBlock Text="{Binding SelectionSummary}" Margin="8,0,0,0"
+                       VerticalAlignment="Center" FontWeight="SemiBold" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Border Grid.Row="1" Visibility="{Binding EmptyStateVisibility}" Padding="20" VerticalAlignment="Top">
         <StackPanel>
           <TextBlock Text="Git-SVN 저장소가 없습니다." FontWeight="SemiBold" />
           <TextBlock Text="Git-SVN 솔루션을 연 다음 새로 고침을 누르세요."
@@ -262,246 +328,344 @@
         </StackPanel>
       </Border>
 
-      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl ItemsSource="{Binding Repositories}" Margin="8,8,8,0">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Border Margin="0,0,0,8" CornerRadius="7"
-                      Background="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBackgroundKey}}"
-                      BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}"
-                      BorderThickness="1" ClipToBounds="True">
-                <Grid>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                  </Grid.RowDefinitions>
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="8,8,8,0">
+          <Border Padding="8,5" BorderThickness="0,0,0,1"
+                  BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsCompactLayout, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                               Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="28" />
+                <ColumnDefinition Width="32" />
+                <ColumnDefinition Width="2*" MinWidth="170" />
+                <ColumnDefinition Width="125" />
+                <ColumnDefinition Width="70" />
+                <ColumnDefinition Width="*" MinWidth="140" />
+                <ColumnDefinition Width="78" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="2" Text="저장소" FontSize="11" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="3" Text="현재 상태" FontSize="11" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="4" Text="게시 대기" FontSize="11" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="5" Text="SVN 대상" FontSize="11" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="6" Text="개별 작업" FontSize="11" FontWeight="SemiBold"
+                         HorizontalAlignment="Center" />
+            </Grid>
+          </Border>
 
-                  <Grid Grid.Row="0" Margin="6,8,10,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="32" />
-                      <ColumnDefinition Width="24" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+          <ItemsControl ItemsSource="{Binding Repositories}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Margin="0,0,0,4" CornerRadius="5"
+                        Background="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBackgroundKey}}"
+                        BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}"
+                        BorderThickness="1" ClipToBounds="True">
+                  <StackPanel>
+                    <Grid Margin="6,5" MinHeight="52"
+                          MouseLeftButtonUp="OnRepositorySummaryMouseLeftButtonUp">
+                      <Grid.Style>
+                        <Style TargetType="Grid">
+                          <Setter Property="Visibility" Value="Visible" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCompactLayout, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                         Value="True">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Grid.Style>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="32" />
+                        <ColumnDefinition Width="2*" MinWidth="170" />
+                        <ColumnDefinition Width="125" />
+                        <ColumnDefinition Width="70" />
+                        <ColumnDefinition Width="*" MinWidth="140" />
+                        <ColumnDefinition Width="78" />
+                      </Grid.ColumnDefinitions>
 
-                    <ToggleButton Grid.Column="0" Style="{StaticResource ChevronToggle}"
-                                  IsChecked="{Binding IsExpanded, Mode=TwoWay}"
-                                  ToolTip="저장소 커밋 목록 접기 또는 펼치기">
-                      <Path Width="14" Height="10" Data="{StaticResource ChevronGeometry}"
-                            Stretch="Uniform" StrokeThickness="1.7"
-                            Stroke="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"
-                            RenderTransformOrigin="0.5,0.5">
-                        <Path.Style>
-                          <Style TargetType="Path">
-                            <Setter Property="RenderTransform">
-                              <Setter.Value><RotateTransform Angle="-90" /></Setter.Value>
-                            </Setter>
-                            <Style.Triggers>
-                              <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
-                                           Value="True">
-                                <Setter Property="RenderTransform">
-                                  <Setter.Value><RotateTransform Angle="0" /></Setter.Value>
-                                </Setter>
-                              </DataTrigger>
-                            </Style.Triggers>
-                          </Style>
-                        </Path.Style>
-                      </Path>
-                    </ToggleButton>
+                      <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                IsEnabled="{Binding CanSelect}" ToolTip="{Binding SelectionAutomationName}"
+                                AutomationProperties.Name="{Binding SelectionAutomationName}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <ToggleButton Grid.Column="1" Style="{StaticResource ChevronToggle}"
+                                    IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                    Visibility="{Binding ExpandToggleVisibility}"
+                                    ToolTip="{Binding CommitDetailsAutomationName}"
+                                    AutomationProperties.Name="{Binding CommitDetailsAutomationName}">
+                        <Path Width="14" Height="10" Data="{StaticResource ChevronGeometry}" Stretch="Uniform"
+                              StrokeThickness="1.7" Stroke="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"
+                              RenderTransformOrigin="0.5,0.5">
+                          <Path.Style>
+                            <Style TargetType="Path">
+                              <Setter Property="RenderTransform"><Setter.Value><RotateTransform Angle="-90" /></Setter.Value></Setter>
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}" Value="True">
+                                  <Setter Property="RenderTransform"><Setter.Value><RotateTransform Angle="0" /></Setter.Value></Setter>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Path.Style>
+                        </Path>
+                      </ToggleButton>
 
-                    <Path Grid.Column="1" Width="18" Height="18" Data="{StaticResource RepositoryGeometry}"
-                          Stretch="Uniform" StrokeThickness="1.5"
-                          Stroke="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"
-                          VerticalAlignment="Center" />
+                      <StackPanel Grid.Column="2" Margin="4,0,12,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                          <Path Width="15" Height="15" Data="{StaticResource RepositoryGeometry}" Stretch="Uniform"
+                                StrokeThickness="1.4" Stroke="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}" />
+                          <TextBlock Text="{Binding Name}" Margin="6,0,0,0" FontWeight="SemiBold"
+                                     TextTrimming="CharacterEllipsis" />
+                          <Border Visibility="{Binding ExternalLinkVisibility}" Margin="7,0,0,0" Padding="5,1"
+                                  CornerRadius="3" BorderThickness="1"
+                                  Background="{DynamicResource {x:Static shell:VsBrushes.CommandBarSelectedKey}}"
+                                  BorderBrush="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}">
+                            <TextBlock Text="외부 링크" FontSize="10" FontWeight="SemiBold" />
+                          </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding PathText}" ToolTip="{Binding PathText}" FontFamily="Consolas"
+                                   FontSize="10.5" TextTrimming="CharacterEllipsis" Margin="21,3,0,0" />
+                        <TextBlock Text="{Binding LinkedProjectPathText}" ToolTip="{Binding LinkedProjectPathText}"
+                                   Visibility="{Binding ExternalLinkVisibility}" FontFamily="Consolas"
+                                   FontSize="10" TextTrimming="CharacterEllipsis" Margin="21,2,0,0" />
+                      </StackPanel>
 
-                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="8,0,12,0">
-                      <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                        <Border Visibility="{Binding ExternalLinkVisibility}" Margin="8,0,0,0" Padding="6,1"
-                                CornerRadius="4"
+                      <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                          <ToggleButton Style="{StaticResource ChevronToggle}" Visibility="{Binding ProblemVisibility}"
+                                        IsChecked="{Binding IsProblemExpanded, Mode=TwoWay}"
+                                        ToolTip="{Binding ProblemAutomationName}"
+                                        AutomationProperties.Name="{Binding ProblemAutomationName}">
+                            <Path Width="15" Height="15" Data="{StaticResource EyeGeometry}" Stretch="Uniform"
+                                  StrokeThickness="1.5" Stroke="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}" />
+                          </ToggleButton>
+                          <Path Width="15" Height="15" Data="{StaticResource CheckGeometry}" Stretch="Uniform"
+                                Visibility="{Binding ReadyStatusVisibility}" StrokeThickness="1.8"
+                                Stroke="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
+                          <TextBlock Text="{Binding StatusText}" Margin="6,0,0,0" FontSize="11"
+                                     FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                     ToolTip="{Binding DisplayProblem}" />
+                        </StackPanel>
+                        <Border Visibility="{Binding PublishOutcomeVisibility}" Margin="0,4,0,0" Padding="5,1"
+                                CornerRadius="3" BorderThickness="1"
                                 Background="{DynamicResource {x:Static shell:VsBrushes.CommandBarSelectedKey}}"
-                                BorderBrush="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}"
-                                BorderThickness="1">
-                          <TextBlock Text="외부 링크" FontSize="10" FontWeight="SemiBold" />
+                                BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}"
+                                ToolTip="{Binding PublishOutcomeMessage}"
+                                AutomationProperties.Name="{Binding PublishOutcomeAutomationName}">
+                          <TextBlock Text="{Binding PublishOutcomeText}" FontSize="10" FontWeight="SemiBold" />
                         </Border>
                       </StackPanel>
-                      <TextBlock Text="{Binding PathText}" FontFamily="Consolas" FontSize="11"
-                                 Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"
-                                 TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
-                      <TextBlock Text="{Binding LinkedProjectPathText}" Visibility="{Binding ExternalLinkVisibility}"
-                                 FontFamily="Consolas" FontSize="10"
-                                 Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"
-                                 TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
-                    </StackPanel>
 
-                    <Border Grid.Column="3" Visibility="{Binding ProblemVisibility}" Margin="0,0,8,0"
-                            Padding="8,4" CornerRadius="5"
-                            Background="{DynamicResource {x:Static shell:VsBrushes.InfoBackgroundKey}}"
-                            BorderBrush="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}"
-                            BorderThickness="1" ToolTip="{Binding Problem}">
-                      <StackPanel Orientation="Horizontal">
-                        <Path Width="15" Height="15" Data="{StaticResource WarningGeometry}" Stretch="Uniform"
-                              StrokeThickness="1.7" Stroke="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}" />
-                        <TextBlock Text="{Binding ProblemLabel}" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0"
-                                   Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}"
-                                   VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="4" Text="{Binding PendingCountText}" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" />
+                      <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                        <Path Width="14" Height="14" Data="{StaticResource ServerGeometry}" Stretch="Uniform"
+                              StrokeThickness="1.4" Stroke="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
+                        <TextBlock Text="{Binding SvnTargetText}" ToolTip="{Binding SvnTargetTooltip}" Margin="6,0,0,0"
+                                   FontFamily="Consolas" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="6" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource IconButton}" Command="{Binding RebaseCommand}"
+                                ToolTip="{Binding RebaseAutomationName}"
+                                AutomationProperties.Name="{Binding RebaseAutomationName}" Margin="0,0,4,0">
+                          <Path Data="{StaticResource DownloadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
+                                Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </Button>
+                        <Button Style="{StaticResource PrimaryIconButton}" Command="{Binding DcommitCommand}"
+                                ToolTip="{Binding DcommitAutomationName}"
+                                AutomationProperties.Name="{Binding DcommitAutomationName}">
+                          <Path Data="{StaticResource UploadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
+                                Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </Button>
+                      </StackPanel>
+                    </Grid>
+
+                    <Grid Margin="5,5" MinHeight="62" MouseLeftButtonUp="OnRepositorySummaryMouseLeftButtonUp">
+                      <Grid.Style>
+                        <Style TargetType="Grid">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCompactLayout, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                         Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Grid.Style>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="36" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="30" />
+                        <ColumnDefinition Width="*" MinWidth="70" />
+                        <ColumnDefinition Width="105" />
+                        <ColumnDefinition Width="44" />
+                        <ColumnDefinition Width="76" />
+                      </Grid.ColumnDefinitions>
+
+                      <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                IsEnabled="{Binding CanSelect}" ToolTip="{Binding SelectionAutomationName}"
+                                AutomationProperties.Name="{Binding SelectionAutomationName}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <ToggleButton Grid.Column="1" Style="{StaticResource ChevronToggle}"
+                                    IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                    Visibility="{Binding ExpandToggleVisibility}"
+                                    ToolTip="{Binding CommitDetailsAutomationName}"
+                                    AutomationProperties.Name="{Binding CommitDetailsAutomationName}">
+                        <Path Width="13" Height="9" Data="{StaticResource ChevronGeometry}" Stretch="Uniform"
+                              StrokeThickness="1.7" Stroke="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"
+                              RenderTransformOrigin="0.5,0.5">
+                          <Path.Style>
+                            <Style TargetType="Path">
+                              <Setter Property="RenderTransform"><Setter.Value><RotateTransform Angle="-90" /></Setter.Value></Setter>
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}" Value="True">
+                                  <Setter Property="RenderTransform"><Setter.Value><RotateTransform Angle="0" /></Setter.Value></Setter>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Path.Style>
+                        </Path>
+                      </ToggleButton>
+                      <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="3,0,4,0">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text=" ↗" Visibility="{Binding ExternalLinkVisibility}" FontWeight="Bold"
+                                   ToolTip="외부 링크 저장소" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                          <ToggleButton Style="{StaticResource ChevronToggle}" Visibility="{Binding ProblemVisibility}"
+                                        IsChecked="{Binding IsProblemExpanded, Mode=TwoWay}"
+                                        ToolTip="{Binding ProblemAutomationName}"
+                                        AutomationProperties.Name="{Binding ProblemAutomationName}">
+                            <Path Width="14" Height="14" Data="{StaticResource EyeGeometry}" Stretch="Uniform"
+                                  StrokeThickness="1.5" Stroke="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}" />
+                          </ToggleButton>
+                          <Path Width="14" Height="14" Data="{StaticResource CheckGeometry}" Stretch="Uniform"
+                                Visibility="{Binding ReadyStatusVisibility}" StrokeThickness="1.8"
+                                Stroke="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
+                          <TextBlock Text="{Binding StatusText}" Margin="4,0,0,0" FontSize="10.5" FontWeight="SemiBold"
+                                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayProblem}" />
+                        </StackPanel>
+                        <Border Visibility="{Binding PublishOutcomeVisibility}" Margin="0,2,0,0" Padding="4,0"
+                                CornerRadius="3" BorderThickness="1"
+                                Background="{DynamicResource {x:Static shell:VsBrushes.CommandBarSelectedKey}}"
+                                BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}"
+                                ToolTip="{Binding PublishOutcomeMessage}"
+                                AutomationProperties.Name="{Binding PublishOutcomeAutomationName}">
+                          <TextBlock Text="{Binding PublishOutcomeText}" FontSize="9.5" FontWeight="SemiBold" />
+                        </Border>
+                      </StackPanel>
+                      <TextBlock Grid.Column="4" Text="{Binding PendingCountText}" FontSize="11" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" HorizontalAlignment="Center" />
+                      <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource IconButton}" Width="34" Height="34" Command="{Binding RebaseCommand}"
+                                ToolTip="{Binding RebaseAutomationName}"
+                                AutomationProperties.Name="{Binding RebaseAutomationName}" Margin="0,0,4,0">
+                          <Path Data="{StaticResource DownloadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
+                                Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </Button>
+                        <Button Style="{StaticResource PrimaryIconButton}" Width="34" Height="34"
+                                Command="{Binding DcommitCommand}" ToolTip="{Binding DcommitAutomationName}"
+                                AutomationProperties.Name="{Binding DcommitAutomationName}">
+                          <Path Data="{StaticResource UploadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
+                                Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </Button>
+                      </StackPanel>
+                      <Grid Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" Margin="3,2,0,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding CompactPathText}" ToolTip="{Binding CompactPathText}"
+                                   FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                          <Path Width="12" Height="12" Data="{StaticResource ServerGeometry}" Stretch="Uniform"
+                                StrokeThickness="1.3" Stroke="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
+                          <TextBlock Text="{Binding SvnTargetText}" ToolTip="{Binding SvnTargetTooltip}" Margin="5,0,0,0"
+                                     FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Grid>
+                    </Grid>
+
+                    <Border Visibility="{Binding ProblemDetailsVisibility}" BorderThickness="0,1,0,0"
+                            BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}"
+                            Background="{DynamicResource {x:Static shell:VsBrushes.InfoBackgroundKey}}" Padding="12,9">
+                      <StackPanel>
+                        <TextBlock Text="{Binding DisplayProblem}" TextWrapping="Wrap" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}" />
+                        <StackPanel Visibility="{Binding ConflictFilesVisibility}" Margin="0,8,0,0">
+                          <TextBlock Text="해결할 충돌 파일" FontSize="11" FontWeight="SemiBold" />
+                          <ItemsControl ItemsSource="{Binding ConflictedFiles}" Margin="8,3,0,0">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                              <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Visibility="{Binding RebaseRecoveryVisibility}" Orientation="Horizontal"
+                                    HorizontalAlignment="Right" Margin="0,9,0,0">
+                          <Button Style="{StaticResource ModernButton}" Content="rebase 중단"
+                                  Command="{Binding AbortRebaseCommand}" Margin="0,0,8,0" />
+                          <Button Style="{StaticResource PrimaryButton}" Content="rebase 계속"
+                                  Command="{Binding ContinueRebaseCommand}" />
+                        </StackPanel>
                       </StackPanel>
                     </Border>
 
-                    <StackPanel Grid.Column="4" Orientation="Horizontal">
-                      <Button Style="{StaticResource IconButton}" Command="{Binding RebaseCommand}"
-                              ToolTip="이 저장소에서 SVN 변경 받기" Margin="0,0,6,0">
-                        <Path Data="{StaticResource DownloadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                      </Button>
-                      <Button Style="{StaticResource PrimaryIconButton}" Command="{Binding DcommitCommand}"
-                              ToolTip="이 저장소의 로컬 커밋을 SVN에 게시">
-                        <Path Data="{StaticResource UploadGeometry}" Stretch="Uniform" StrokeThickness="1.8"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                      </Button>
-                    </StackPanel>
-                  </Grid>
-
-                  <Border Grid.Row="1" Visibility="{Binding ExpandedVisibility}"
-                          BorderThickness="0,1,0,0"
-                          BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}"
-                          Padding="60,10,10,12">
-                    <StackPanel>
-                      <Border Visibility="{Binding RebaseRecoveryVisibility}" Margin="0,0,0,10" Padding="10"
-                              CornerRadius="5"
-                              Background="{DynamicResource {x:Static shell:VsBrushes.InfoBackgroundKey}}"
-                              BorderBrush="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}"
-                              BorderThickness="1">
-                        <StackPanel>
-                          <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" FontWeight="SemiBold"
-                                     Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}" />
-                          <StackPanel Visibility="{Binding ConflictFilesVisibility}" Margin="0,8,0,0">
-                            <TextBlock Text="해결할 충돌 파일" FontSize="11" FontWeight="SemiBold" />
-                            <ItemsControl ItemsSource="{Binding ConflictedFiles}" Margin="8,3,0,0">
-                              <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                  <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11"
-                                             TextTrimming="CharacterEllipsis" />
-                                </DataTemplate>
-                              </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                          </StackPanel>
-                          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-                            <Button Style="{StaticResource ModernButton}" Content="rebase 중단"
-                                    Command="{Binding AbortRebaseCommand}" Margin="0,0,8,0" />
-                            <Button Style="{StaticResource PrimaryButton}" Content="rebase 계속"
-                                    Command="{Binding ContinueRebaseCommand}" />
-                          </StackPanel>
-                        </StackPanel>
-                      </Border>
-
-                      <ItemsControl ItemsSource="{Binding PendingCommits}"
-                                    Visibility="{Binding PendingCommitsVisibility}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate>
-                            <Grid MinHeight="46" Margin="0,0,0,2">
-                              <Border Width="2" HorizontalAlignment="Left" Margin="13,0,0,0"
-                                      Background="{DynamicResource {x:Static shell:VsBrushes.AccentMediumKey}}" />
-                              <Border Margin="28,0,0,0" CornerRadius="0,5,5,0"
-                                      Background="{DynamicResource {x:Static shell:VsBrushes.CommandBarSelectedKey}}"
-                                      BorderBrush="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}"
-                                      BorderThickness="3,0,0,0" Padding="10,5">
-                                <Grid>
-                                  <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="32" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                  </Grid.ColumnDefinitions>
-                                  <Border Grid.Column="0" Width="26" Height="26" CornerRadius="13"
-                                          BorderBrush="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}"
-                                          BorderThickness="1">
-                                    <Path Width="14" Height="14" Data="{StaticResource UploadGeometry}" Stretch="Uniform"
-                                          StrokeThickness="1.8"
-                                          Stroke="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}" />
-                                  </Border>
-                                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,10,0">
-                                    <TextBlock Text="{Binding Subject}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                               Foreground="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                      <TextBlock Text="{Binding ShortHash}" FontFamily="Consolas" FontSize="11"
-                                                 Foreground="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}" />
-                                      <TextBlock Text="  ·  " FontSize="11"
-                                                 Foreground="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}" />
-                                      <TextBlock Text="{Binding Author}" FontSize="11"
-                                                 Foreground="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}" />
-                                      <TextBlock Text="  ·  " FontSize="11"
-                                                 Foreground="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}" />
-                                      <TextBlock Text="{Binding Date}" FontSize="11"
-                                                 Foreground="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}" />
-                                    </StackPanel>
-                                  </StackPanel>
-                                  <Path Grid.Column="2" Width="15" Height="15" Data="{StaticResource UploadGeometry}"
-                                        Stretch="Uniform" StrokeThickness="1.8"
-                                        Stroke="{DynamicResource {x:Static shell:VsBrushes.CommandBarTextSelectedKey}}"
-                                        VerticalAlignment="Center" Margin="8,0" />
-                                </Grid>
-                              </Border>
-                            </Grid>
-                          </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-
-                      <Grid Height="20" Visibility="{Binding PendingCommitsVisibility}">
-                        <Border Height="1" Margin="28,0,0,0" VerticalAlignment="Bottom"
-                                Background="{DynamicResource {x:Static shell:VsBrushes.AccentPaleKey}}" />
-                        <Ellipse Width="7" Height="7" Margin="10,0,0,-3" HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                 Fill="{DynamicResource {x:Static shell:VsBrushes.AccentPaleKey}}" />
-                        <Border Width="24" Height="24" CornerRadius="12" Margin="0,0,8,-12"
-                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                Background="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBackgroundKey}}"
-                                BorderBrush="{DynamicResource {x:Static shell:VsBrushes.AccentPaleKey}}"
-                                BorderThickness="1">
-                          <Path Width="14" Height="14" Data="{StaticResource ServerGeometry}" Stretch="Uniform"
-                                StrokeThickness="1.5" Stroke="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
-                        </Border>
-                      </Grid>
-
-                      <Grid MinHeight="46" Visibility="{Binding BaselineVisibility}">
-                        <Border Width="2" HorizontalAlignment="Left" Margin="13,0,0,0"
-                                Background="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" />
-                        <Grid Margin="28,0,0,0">
+                    <Border Visibility="{Binding CommitDetailsVisibility}" BorderThickness="0,1,0,0"
+                            BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" Padding="12,8,12,10">
+                      <StackPanel>
+                        <Grid Margin="0,0,0,4">
                           <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="42" />
+                            <ColumnDefinition Width="72" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="76" />
                           </Grid.ColumnDefinitions>
-                          <Border Grid.Column="0" Width="26" Height="26" CornerRadius="13"
-                                  BorderBrush="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}"
-                                  BorderThickness="2" HorizontalAlignment="Left" VerticalAlignment="Center">
-                            <Path Width="14" Height="14" Data="{StaticResource CheckGeometry}" Stretch="Uniform"
-                                  StrokeThickness="2" Stroke="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
-                          </Border>
-                          <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding SvnBaseline.Subject}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                              <TextBlock Text="{Binding SvnBaseline.ShortHash}" FontFamily="Consolas" FontSize="11" />
-                              <TextBlock Text="  ·  SVN" FontSize="11" />
-                            </StackPanel>
-                          </StackPanel>
-                          <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,8,0">
-                            <Path Width="14" Height="14" Data="{StaticResource CheckGeometry}" Stretch="Uniform"
-                                  StrokeThickness="1.8" Stroke="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" />
-                            <TextBlock Text="SVN" Margin="6,0,0,0" FontWeight="SemiBold" />
-                          </StackPanel>
+                          <TextBlock Grid.Column="0" Text="해시" FontSize="10" FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="1" Text="제목" FontSize="10" FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="2" Text="작성자" FontSize="10" FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="3" Text="날짜" FontSize="10" FontWeight="SemiBold" />
                         </Grid>
-                      </Grid>
-
-                      <TextBlock Visibility="{Binding NoPendingCommitsVisibility}"
-                                 Text="게시할 로컬 커밋 없음" Style="{StaticResource SecondaryText}"
-                                 Margin="28,4,0,2" />
-                    </StackPanel>
-                  </Border>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+                        <ItemsControl ItemsSource="{Binding PendingCommits}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <Grid MinHeight="30" Background="{DynamicResource {x:Static shell:VsBrushes.CommandBarSelectedKey}}"
+                                    Margin="0,0,0,2">
+                                <Grid.ColumnDefinitions>
+                                  <ColumnDefinition Width="72" />
+                                  <ColumnDefinition Width="*" />
+                                  <ColumnDefinition Width="100" />
+                                  <ColumnDefinition Width="76" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding ShortHash}" FontFamily="Consolas" FontSize="10.5"
+                                           Margin="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="1" Text="{Binding Subject}" FontWeight="SemiBold" FontSize="11"
+                                           Margin="4,0,8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="2" Text="{Binding Author}" FontSize="10.5" Margin="0,0,8,0"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="3" Text="{Binding Date}" FontSize="10.5"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                              </Grid>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
       </ScrollViewer>
     </Grid>
 
