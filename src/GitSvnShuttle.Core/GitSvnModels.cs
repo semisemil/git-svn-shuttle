@@ -34,7 +34,8 @@ public sealed class GitSvnRepository
         IReadOnlyList<string>? conflictedFiles = null,
         bool canContinueRebase = false,
         bool isExternalLink = false,
-        string? linkedProjectPath = null)
+        string? linkedProjectPath = null,
+        IReadOnlyList<string>? svnTargets = null)
     {
         Name = name;
         Path = path;
@@ -47,6 +48,7 @@ public sealed class GitSvnRepository
         CanContinueRebase = canContinueRebase;
         IsExternalLink = isExternalLink;
         LinkedProjectPath = linkedProjectPath;
+        SvnTargets = svnTargets ?? Array.Empty<string>();
     }
 
     public string Name { get; }
@@ -60,6 +62,7 @@ public sealed class GitSvnRepository
     public bool CanContinueRebase { get; }
     public bool IsExternalLink { get; }
     public string? LinkedProjectPath { get; }
+    public IReadOnlyList<string> SvnTargets { get; }
     public bool IsReady => string.IsNullOrWhiteSpace(Problem) && !IsRebaseInProgress;
 }
 
@@ -106,6 +109,21 @@ public sealed class PublishPreparationResult
     public OperationResult Outcome { get; }
     public GitSvnPublishSnapshot? Snapshot { get; }
     public bool Succeeded => Outcome.Succeeded && Snapshot != null;
+}
+
+public sealed class PublishBatchPreparationResult
+{
+    public PublishBatchPreparationResult(
+        OperationResult outcome,
+        IReadOnlyList<GitSvnPublishSnapshot> snapshots)
+    {
+        Outcome = outcome;
+        Snapshots = snapshots;
+    }
+
+    public OperationResult Outcome { get; }
+    public IReadOnlyList<GitSvnPublishSnapshot> Snapshots { get; }
+    public bool Succeeded => Outcome.Succeeded;
 }
 
 public sealed class OperationResult
