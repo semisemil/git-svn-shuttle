@@ -30,9 +30,22 @@ public partial class GitSvnShuttleControl : UserControl, System.IDisposable
         private set => SetValue(IsCompactLayoutProperty, value);
     }
 
+    public bool PreserveDataContextOnLoad { get; set; }
+
     private void OnLoaded(object sender, System.Windows.RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
+        if (PreserveDataContextOnLoad)
+        {
+            return;
+        }
+
+        InitializeFromPackage();
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private void InitializeFromPackage()
+    {
         try
         {
             if (GitSvnShuttlePackage.Instance is GitSvnShuttlePackage package)
@@ -69,6 +82,15 @@ public partial class GitSvnShuttleControl : UserControl, System.IDisposable
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (!PreserveDataContextOnLoad)
+        {
+            HandlePreviewKeyDown(e);
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private void HandlePreviewKeyDown(KeyEventArgs e)
+    {
         if (e.Key != Key.Escape || DataContext is not GitSvnShuttleViewModel viewModel)
         {
             return;
@@ -85,6 +107,15 @@ public partial class GitSvnShuttleControl : UserControl, System.IDisposable
         IsCompactLayout = e.NewSize.Width < CompactLayoutThreshold;
 
     private void OnRepositorySummaryMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!PreserveDataContextOnLoad)
+        {
+            ToggleRepositoryDetails(sender, e);
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private void ToggleRepositoryDetails(object sender, MouseButtonEventArgs e)
     {
         if (sender is not System.Windows.FrameworkElement row ||
             row.DataContext is not RepositoryViewModel repository ||
@@ -117,6 +148,15 @@ public partial class GitSvnShuttleControl : UserControl, System.IDisposable
     }
 
     private void OnPublishOverlayMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!PreserveDataContextOnLoad)
+        {
+            HandlePublishOverlayMouseLeftButtonDown(e);
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private void HandlePublishOverlayMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, PublishOverlay) ||
             DataContext is not GitSvnShuttleViewModel viewModel ||
