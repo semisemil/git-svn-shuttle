@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitSvnShuttle.Vsix", "src\G
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitSvnShuttle.Core.Tests", "tests\GitSvnShuttle.Core.Tests\GitSvnShuttle.Core.Tests.csproj", "{B85E1D13-171A-4032-B012-419408C63DAE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitSvnShuttle.UiPreview", "tools\GitSvnShuttle.UiPreview\GitSvnShuttle.UiPreview.csproj", "{11563C60-E283-4DC2-A505-66883C7FA101}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,5 +28,9 @@ Global
 		{B85E1D13-171A-4032-B012-419408C63DAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B85E1D13-171A-4032-B012-419408C63DAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B85E1D13-171A-4032-B012-419408C63DAE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11563C60-E283-4DC2-A505-66883C7FA101}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11563C60-E283-4DC2-A505-66883C7FA101}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11563C60-E283-4DC2-A505-66883C7FA101}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11563C60-E283-4DC2-A505-66883C7FA101}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

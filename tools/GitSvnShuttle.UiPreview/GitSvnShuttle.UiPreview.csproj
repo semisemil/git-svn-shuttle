@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>GitSvnShuttle.UiPreview</AssemblyName>
+    <RootNamespace>GitSvnShuttle.UiPreview</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GitSvnShuttle.Vsix\GitSvnShuttle.Vsix.csproj" />
+    <Reference Include="Microsoft.VisualStudio.Shell.15.0">
+      <HintPath>$(USERPROFILE)\.nuget\packages\microsoft.visualstudio.shell.15.0\17.14.40264\lib\net472\Microsoft.VisualStudio.Shell.15.0.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <None Include="$(USERPROFILE)\.nuget\packages\microsoft.visualstudio.shell.15.0\17.14.40264\lib\net472\Microsoft.VisualStudio.Shell.15.0.dll"
+          Link="Microsoft.VisualStudio.Shell.15.0.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
