@@ -12,3 +12,8 @@ src/GitSvnShuttle.Vsix/obj/
 artifacts/
 .test-tools/
 .test-workspace/
+
+# Local design, generated output, and Proofline workflow state
+/design/
+/output/
+/.proofline/
