@@ -105,7 +105,7 @@ public sealed class SecurityBoundaryTests
                         return Success("baseline\u001fbase\u001fSVN\u001f2026-08-11\u001f기준");
                     }
 
-                    if (arguments.StartsWith("log --date=short --encoding=UTF-8 --format=", StringComparison.Ordinal))
+                    if (arguments.StartsWith("log --date=short --encoding=UTF-8 --reverse --format=", StringComparison.Ordinal))
                     {
                         return Success(string.Empty);
                     }
@@ -124,6 +124,9 @@ public sealed class SecurityBoundaryTests
             Assert.True(repository.IsExternalLink);
             Assert.Equal(Path.GetFullPath(externalRoot), repository.Path);
             Assert.Equal(Path.GetFullPath(linkedProjectPath), repository.LinkedProjectPath);
+            Assert.Equal(
+                new[] { "https://svn.example.test/demo/trunk" },
+                repository.SvnTargets);
             Assert.Equal(1, runner.Calls.Count(call => call.Arguments == "config --get-regexp ^svn-remote\\."));
         }
         finally

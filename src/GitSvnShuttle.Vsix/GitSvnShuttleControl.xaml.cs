@@ -1,15 +1,33 @@
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Win32;
 
 namespace GitSvnShuttle.Vsix;
 
 public partial class GitSvnShuttleControl : UserControl, System.IDisposable
 {
+    private const double CompactLayoutThreshold = 720;
+
+    public static readonly System.Windows.DependencyProperty IsCompactLayoutProperty =
+        System.Windows.DependencyProperty.Register(
+            nameof(IsCompactLayout),
+            typeof(bool),
+            typeof(GitSvnShuttleControl),
+            new System.Windows.PropertyMetadata(true));
+
     public GitSvnShuttleControl()
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        SizeChanged += OnSizeChanged;
+    }
+
+    public bool IsCompactLayout
+    {
+        get => (bool)GetValue(IsCompactLayoutProperty);
+        private set => SetValue(IsCompactLayoutProperty, value);
     }
 
     private void OnLoaded(object sender, System.Windows.RoutedEventArgs e)
@@ -63,6 +81,41 @@ public partial class GitSvnShuttleControl : UserControl, System.IDisposable
         }
     }
 
+    private void OnSizeChanged(object sender, System.Windows.SizeChangedEventArgs e) =>
+        IsCompactLayout = e.NewSize.Width < CompactLayoutThreshold;
+
+    private void OnRepositorySummaryMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not System.Windows.FrameworkElement row ||
+            row.DataContext is not RepositoryViewModel repository ||
+            !repository.CanExpand ||
+            IsInsideButton(e.OriginalSource as System.Windows.DependencyObject, row))
+        {
+            return;
+        }
+
+        repository.IsExpanded = !repository.IsExpanded;
+        e.Handled = true;
+    }
+
+    private static bool IsInsideButton(
+        System.Windows.DependencyObject? source,
+        System.Windows.DependencyObject row)
+    {
+        var current = source;
+        while (current != null && !ReferenceEquals(current, row))
+        {
+            if (current is ButtonBase)
+            {
+                return true;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
+    }
+
     private void OnPublishOverlayMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, PublishOverlay) ||
@@ -78,6 +131,7 @@ public partial class GitSvnShuttleControl : UserControl, System.IDisposable
 
     public void Dispose()
     {
+        SizeChanged -= OnSizeChanged;
         if (DataContext is System.IDisposable disposable)
         {
             disposable.Dispose();

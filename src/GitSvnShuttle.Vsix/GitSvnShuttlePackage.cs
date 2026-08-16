@@ -16,13 +16,16 @@ namespace GitSvnShuttle.Vsix;
 [ProvideMenuResource("GitSvnShuttle.CTMENU", 1)]
 [ProvideToolWindow(typeof(GitSvnShuttleToolWindow), Style = VsDockStyle.Tabbed, Window = ToolWindowGuids80.SolutionExplorer)]
 [Guid(PackageGuidString)]
-public sealed class GitSvnShuttlePackage : AsyncPackage
+public sealed class GitSvnShuttlePackage : AsyncPackage, IVsSolutionEvents
 {
     public const string PackageGuidString = "4879B52A-7FA8-4D1A-8EAE-E96D2940C02E";
     private static readonly Guid CommandSet = new Guid("46F6ACDB-AD32-49D8-B38A-EDDFB249B83C");
     private const int ShowCommandId = 0x0100;
+    private IVsSolution? advisedSolution;
+    private uint solutionEventsCookie;
 
     internal static GitSvnShuttlePackage? Instance { get; private set; }
+    internal event EventHandler<SolutionContextChangedEventArgs>? SolutionContextChanged;
 
     protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
     {
@@ -30,6 +33,21 @@ public sealed class GitSvnShuttlePackage : AsyncPackage
         await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
         var commandService = await GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService;
         commandService?.AddCommand(new MenuCommand(ShowToolWindow, new CommandID(CommandSet, ShowCommandId)));
+        advisedSolution = await GetServiceAsync(typeof(SVsSolution)) as IVsSolution;
+        advisedSolution?.AdviseSolutionEvents(this, out solutionEventsCookie);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (disposing && advisedSolution != null && solutionEventsCookie != 0)
+        {
+            advisedSolution.UnadviseSolutionEvents(solutionEventsCookie);
+            solutionEventsCookie = 0;
+            advisedSolution = null;
+        }
+
+        base.Dispose(disposing);
     }
 
     private void ShowToolWindow(object sender, EventArgs e)
@@ -105,4 +123,42 @@ public sealed class GitSvnShuttlePackage : AsyncPackage
         outputWindow.GetPane(ref paneGuid, out var pane);
         return pane;
     }
+
+    int IVsSolutionEvents.OnAfterOpenProject(IVsHierarchy hierarchy, int added) => VSConstants.S_OK;
+
+    int IVsSolutionEvents.OnQueryCloseProject(IVsHierarchy hierarchy, int removing, ref int cancel) =>
+        VSConstants.S_OK;
+
+    int IVsSolutionEvents.OnBeforeCloseProject(IVsHierarchy hierarchy, int removed) => VSConstants.S_OK;
+
+    int IVsSolutionEvents.OnAfterLoadProject(IVsHierarchy stubHierarchy, IVsHierarchy realHierarchy) =>
+        VSConstants.S_OK;
+
+    int IVsSolutionEvents.OnQueryUnloadProject(IVsHierarchy realHierarchy, ref int cancel) => VSConstants.S_OK;
+
+    int IVsSolutionEvents.OnBeforeUnloadProject(IVsHierarchy realHierarchy, IVsHierarchy stubHierarchy) =>
+        VSConstants.S_OK;
+
+    int IVsSolutionEvents.OnAfterOpenSolution(object reserved, int newSolution)
+    {
+        SolutionContextChanged?.Invoke(this, new SolutionContextChangedEventArgs(isOpen: true));
+        return VSConstants.S_OK;
+    }
+
+    int IVsSolutionEvents.OnQueryCloseSolution(object reserved, ref int cancel) => VSConstants.S_OK;
+
+    int IVsSolutionEvents.OnBeforeCloseSolution(object reserved)
+    {
+        SolutionContextChanged?.Invoke(this, new SolutionContextChangedEventArgs(isOpen: false));
+        return VSConstants.S_OK;
+    }
+
+    int IVsSolutionEvents.OnAfterCloseSolution(object reserved) => VSConstants.S_OK;
+}
+
+internal sealed class SolutionContextChangedEventArgs : EventArgs
+{
+    public SolutionContextChangedEventArgs(bool isOpen) => IsOpen = isOpen;
+
+    public bool IsOpen { get; }
 }
