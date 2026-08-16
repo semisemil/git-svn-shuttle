@@ -15,10 +15,9 @@ It fills the gap left after Visual Studio's built-in Git UI has staged and commi
 
 ## Current MVP
 
-Open **Tools > Git-SVN Shuttle** in Visual Studio. The tool window shows every Git repository under the solution that contains `svn-remote.*` configuration. Each repository history is displayed newest first:
+Open **Tools > Git-SVN Shuttle** in Visual Studio. The tool window shows every Git repository under the solution that contains `svn-remote.*` configuration. Select only the repositories to publish, then expand a repository row to review its pending commits in the exact order they will be sent by `git svn dcommit`.
 
-- Blue rows with an upload icon are local commits that will be sent by `git svn dcommit`.
-- The server marker separates them from the last commit already represented in SVN.
+The table keeps repository identity, current state, pending count, SVN destination, and individual actions visible. It switches to a compact two-line layout in narrow tool windows without horizontal scrolling.
 
 Uncommitted file changes are shown separately in the repository header. They are not part of the dcommit list, and that repository's action buttons remain disabled until the changes are committed or discarded.
 
@@ -36,9 +35,9 @@ The root repository is processed first, followed by nested repositories in path 
 2. Open a solution located inside the main Git-SVN working copy.
 3. Open **Tools > Git-SVN Shuttle**.
 4. The extension checks `git --version` and `git svn --version` once. If setup is required, use the folder button to select `git.exe` or the search button to scan common locations.
-5. Review the blue upload rows above the server marker. Only those commits will be dcommitted.
+5. Select the repositories to publish and expand each row to review its pending commits.
 6. Use the download icon for one repository or **모두 받기** before publishing.
-7. Use an upload icon or **SVN에 게시**. Confirm the SVN destination and exact commits in the confirmation window before starting. If HEAD, pending commits, the SVN baseline, or SVN configuration changes, publishing stops and requires a new confirmation.
+7. Use an upload icon to publish one repository, or publish the selected repositories in the displayed selection order. Confirm the SVN destination and exact commits before starting. If HEAD, pending commits, the SVN baseline, or SVN configuration changes, publishing stops and requires a new confirmation.
 8. Read detailed command output under **View > Output > Git-SVN Shuttle**.
 
 When a loaded project is linked through a directory junction, the repository card identifies it as an external link and shows the physical Git working path used for Git-SVN operations.
