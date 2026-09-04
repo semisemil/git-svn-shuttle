@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using GitSvnShuttle.Core;
 
 namespace GitSvnShuttle.Vsix;
@@ -47,6 +49,30 @@ internal sealed class PublishConfirmationViewModel : INotifyPropertyChanged
 
         NotifySummaryChanged();
         SetOpen(PendingPublishItems.Count > 0);
+    }
+
+    public async Task<bool> IsCurrentAsync(
+        Func<GitSvnPublishSnapshot, CancellationToken, Task<OperationResult>> validate,
+        CancellationToken cancellationToken)
+    {
+        if (!isOpen)
+        {
+            return false;
+        }
+
+        var expected = snapshots;
+        foreach (var snapshot in expected)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = await validate(snapshot, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!result.Succeeded || !isOpen || !ReferenceEquals(expected, snapshots))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public GitSvnPublishSnapshot[] TakeSnapshots()

@@ -25,7 +25,7 @@ If `git svn rebase` stops on conflicts, the repository shows the unresolved file
 
 Before a rebase, the extension requires a clean working tree and an attached branch. Before dcommit, it additionally rejects merge commits and runs `git svn dcommit --dry-run`. The confirmation records the exact HEAD, pending commit hashes, SVN baseline, and SVN configuration. Confirming revalidates that snapshot and runs dcommit only while the current branch still points to the confirmed HEAD; any mismatch aborts the operation. **Publish all** preflights every repository before publishing the first one, then stops at the first failure. SVN cannot make publishing across multiple repositories atomic, so earlier successful dcommits cannot be rolled back automatically.
 
-Repository and Git metadata changes are monitored through debounced filesystem notifications. This keeps the UI current without periodic Git polling. The snapshot validation remains the final safety boundary even if a filesystem notification is delayed or lost.
+Repository and Git metadata changes are monitored through debounced filesystem notifications. This keeps the UI current without periodic Git polling. While publish confirmation is open, notifications first trigger a local snapshot check: delayed or duplicate notifications keep the confirmation open when the prepared state still matches. A changed snapshot invalidates the confirmation. The snapshot validation before dcommit remains the final safety boundary even if a filesystem notification is delayed or lost.
 
 The root repository is processed first, followed by nested repositories in path order. User-defined ordering is planned but is not part of this MVP.
 

@@ -1,4 +1,5 @@
 using GitSvnShuttle.Core;
+using GitSvnShuttle.Vsix;
 using Xunit;
 
 namespace GitSvnShuttle.Core.Tests;
@@ -770,6 +771,92 @@ public sealed class GitSvnWorkspaceServiceTests
 
         Assert.False(result.Succeeded);
         Assert.Equal("rev-parse --git-dir", Assert.Single(runner.Calls).Arguments);
+    }
+
+    [Fact]
+    public async Task DelayedChangeNotification_KeepsConfirmationPreparedAfterAnAdditionalCommit()
+    {
+        const string path = @"C:\work\a";
+        var heads = new Dictionary<string, string> { [path] = "old" };
+        var runner = CreateRepositoryRunner(heads);
+        var service = new GitSvnWorkspaceService(runner);
+        Assert.True((await service.PrepareDcommitAsync(path, CancellationToken.None)).Succeeded);
+
+        heads[path] = "new";
+        var responder = runner.Responder!;
+        runner.Responder = (repository, arguments) => arguments.StartsWith("log --date=short ", StringComparison.Ordinal)
+            ? Success("old\u001fold\u001fKim\u001f2026-09-05\u001fOld commit\n" +
+                      "new\u001fnew\u001fKim\u001f2026-09-05\u001fAdditional commit")
+            : responder(repository, arguments);
+        var preparation = await service.PrepareDcommitAsync(path, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+        var confirmation = new PublishConfirmationViewModel();
+        confirmation.Prepare(new[] { preparation.Snapshot! });
+        runner.Calls.Clear();
+
+        // Two delayed/duplicate notifications arrive after the latest preparation opened the dialog.
+        Assert.True(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotAsync, CancellationToken.None));
+        Assert.True(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotAsync, CancellationToken.None));
+
+        Assert.True(confirmation.IsPublishConfirmationOpen);
+        Assert.Equal(new[] { "old", "new" }, confirmation.PendingPublishItems.Select(item => item.ShortHash));
+        Assert.Same(preparation.Snapshot, Assert.Single(confirmation.TakeSnapshots()));
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("head")]
+    [InlineData("commits")]
+    [InlineData("config")]
+    [InlineData("baseline")]
+    [InlineData("dirty")]
+    [InlineData("status-failed")]
+    [InlineData("missing-git-directory")]
+    public async Task ChangeNotification_RejectsChangedOrUnreadablePreparedState(string change)
+    {
+        const string path = @"C:\work\a";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string> { [path] = "confirmed" });
+        var service = new GitSvnWorkspaceService(runner);
+        var preparation = await service.PrepareDcommitAsync(path, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+        var confirmation = new PublishConfirmationViewModel();
+        confirmation.Prepare(new[] { preparation.Snapshot! });
+        runner.Calls.Clear();
+        var responder = runner.Responder!;
+        runner.Responder = (repository, arguments) => (change, arguments) switch
+        {
+            ("head", "rev-parse --verify HEAD") => Success("changed"),
+            ("commits", _) when arguments.StartsWith("log --date=short ", StringComparison.Ordinal) =>
+                Success("changed\u001fchanged\u001fKim\u001f2026-09-05\u001fDifferent commit"),
+            ("config", "config --get-regexp ^(svn\\.|svn-remote\\.)") => Success("svn-remote.svn.url https://svn.test/other"),
+            ("baseline", "log --grep=git-svn-id: --format=%H -1") => Success("changed-base"),
+            ("dirty", "--no-optional-locks status --porcelain=v1") => Success(" M file.cs"),
+            ("status-failed", "--no-optional-locks status --porcelain=v1") => new GitCommandResult(1, "", "unreadable"),
+            ("missing-git-directory", "rev-parse --git-dir") => Success(""),
+            _ => responder(repository, arguments),
+        };
+
+        Assert.False(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotAsync, CancellationToken.None));
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ValidatePublishSnapshot_RejectsNullAndPropagatesCancellationWithoutGitSvnCommands()
+    {
+        const string path = @"C:\work\a";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string> { [path] = "confirmed" });
+        var service = new GitSvnWorkspaceService(runner);
+        await Assert.ThrowsAsync<ArgumentNullException>(() => service.ValidatePublishSnapshotAsync(null!, CancellationToken.None));
+        Assert.Empty(runner.Calls);
+
+        var preparation = await service.PrepareDcommitAsync(path, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+        runner.Calls.Clear();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            service.ValidatePublishSnapshotAsync(preparation.Snapshot!, cancellation.Token));
+        Assert.Empty(runner.Calls);
     }
 
     private static FakeGitCommandRunner CreateRepositoryRunner(

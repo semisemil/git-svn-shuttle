@@ -392,6 +392,12 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
 
         await RunBusyAsync(async () =>
         {
+            if (reason == RepositoryRefreshReason.Automatic && IsPublishConfirmationOpen &&
+                await publishConfirmation.IsCurrentAsync(WorkspaceService.ValidatePublishSnapshotAsync, OperationToken))
+            {
+                return;
+            }
+
             var confirmationInvalidated =
                 reason == RepositoryRefreshReason.Automatic && IsPublishConfirmationOpen;
             ClosePublishConfirmation();

@@ -73,6 +73,21 @@ internal sealed class GitSvnPublishWorkflow
             snapshots);
     }
 
+    internal async Task<OperationResult> ValidatePublishSnapshotAsync(
+        GitSvnPublishSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (snapshot == null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        // Watcher notifications can come from preparation itself. Read current state
+        // without another git-svn dry run, which could produce more notifications.
+        return await validator.ValidatePreparedSnapshotAsync(snapshot, runDryRun: false, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     internal async Task<OperationResult> DcommitPreparedAsync(
         GitSvnPublishSnapshot snapshot,
         CancellationToken cancellationToken)

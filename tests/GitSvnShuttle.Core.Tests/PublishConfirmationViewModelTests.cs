@@ -72,6 +72,67 @@ public sealed class PublishConfirmationViewModelTests
         Assert.Empty(model.TakeSnapshots());
     }
 
+    [Fact]
+    public async Task IsCurrent_ValidatesEverySelectedRepositoryWithoutChangingConfirmation()
+    {
+        var model = new PublishConfirmationViewModel();
+        model.Prepare(new[] { Snapshot("b", "https://svn.test/b", "b1"), Snapshot("a", "https://svn.test/a", "a1") });
+        var calls = new List<string>();
+
+        var current = await model.IsCurrentAsync((snapshot, _) =>
+        {
+            calls.Add(snapshot.RepositoryName);
+            return Task.FromResult(new OperationResult(snapshot.RepositoryPath, snapshot.RepositoryName != "a", "check"));
+        }, CancellationToken.None);
+
+        Assert.False(current);
+        Assert.Equal(new[] { "b", "a" }, calls);
+        Assert.Equal(new[] { "b1", "a1" }, model.PendingPublishItems.Select(item => item.ShortHash));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IsCurrent_DoesNotAcceptValidationForClosedOrReplacedConfirmation(bool prepareAgain)
+    {
+        var model = new PublishConfirmationViewModel();
+        model.Prepare(new[] { Snapshot("old", "https://svn.test/old", "old") });
+        var pending = new TaskCompletionSource<OperationResult>();
+        var validation = model.IsCurrentAsync((_, _) => pending.Task, CancellationToken.None);
+        model.Close();
+        if (prepareAgain)
+        {
+            model.Prepare(new[] { Snapshot("new", "https://svn.test/new", "new") });
+        }
+        pending.SetResult(new OperationResult("old", true, "matched"));
+
+        Assert.False(await validation);
+        Assert.Equal(prepareAgain, model.IsPublishConfirmationOpen);
+        Assert.Equal(prepareAgain ? new[] { "new" } : Array.Empty<string>(),
+            model.PendingPublishItems.Select(item => item.ShortHash));
+    }
+
+    [Fact]
+    public async Task IsCurrent_ClosedConfirmationDoesNotStartValidation()
+    {
+        var model = new PublishConfirmationViewModel();
+        Assert.False(await model.IsCurrentAsync((_, _) => throw new InvalidOperationException("must not run"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task IsCurrent_CancellationDuringValidationIsNotReportedAsAMatch()
+    {
+        var model = new PublishConfirmationViewModel();
+        model.Prepare(new[] { Snapshot("a", "https://svn.test/a", "a") });
+        using var cancellation = new CancellationTokenSource();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => model.IsCurrentAsync((snapshot, _) =>
+        {
+            cancellation.Cancel();
+            return Task.FromResult(new OperationResult(snapshot.RepositoryPath, true, "matched"));
+        }, cancellation.Token));
+    }
+
     private static GitSvnPublishSnapshot Snapshot(string name, string target, params string[] hashes) =>
         new(name, @"C:\work\" + name, @"C:\work\" + name + @"\.git", hashes.Last(), "baseline",
             hashes.Select(hash => new GitSvnCommit(hash, hash, "Kim", "2026-09-05", hash)).ToArray(),
