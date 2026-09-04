@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace GitSvnShuttle.Core;
 
@@ -83,9 +84,9 @@ public sealed class GitSvnPublishSnapshot
         GitDirectory = gitDirectory;
         HeadHash = headHash;
         BaselineHash = baselineHash;
-        PendingCommits = pendingCommits;
+        PendingCommits = Array.AsReadOnly(pendingCommits.ToArray());
         SvnConfigurationFingerprint = svnConfigurationFingerprint;
-        SvnTargets = svnTargets;
+        SvnTargets = Array.AsReadOnly(svnTargets.ToArray());
     }
 
     public string RepositoryName { get; }

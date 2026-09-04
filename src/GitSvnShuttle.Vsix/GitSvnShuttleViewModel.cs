@@ -9,7 +9,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using GitSvnShuttle.Core;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
+using static GitSvnShuttle.Vsix.OperationOutcomeBuilder;
+using static GitSvnShuttle.Vsix.OperationPresentation;
 
 namespace GitSvnShuttle.Vsix;
 
@@ -21,31 +22,6 @@ internal enum RepositoryRefreshReason
     ContextReset,
 }
 
-internal enum BusyExecutionKind
-{
-    Completed,
-    Cancelled,
-    Failed,
-    Skipped,
-}
-
-internal sealed class BusyExecutionResult
-{
-    private BusyExecutionResult(BusyExecutionKind kind, string message)
-    {
-        Kind = kind;
-        Message = message;
-    }
-
-    public BusyExecutionKind Kind { get; }
-    public string Message { get; }
-
-    public static BusyExecutionResult Completed() => new BusyExecutionResult(BusyExecutionKind.Completed, string.Empty);
-    public static BusyExecutionResult Cancelled() => new BusyExecutionResult(BusyExecutionKind.Cancelled, "사용자가 작업을 취소했습니다.");
-    public static BusyExecutionResult Failed(string message) => new BusyExecutionResult(BusyExecutionKind.Failed, message);
-    public static BusyExecutionResult Skipped() => new BusyExecutionResult(BusyExecutionKind.Skipped, "작업을 시작하지 않았습니다.");
-}
-
 internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly GitSvnShuttlePackage package;
@@ -53,7 +29,8 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
     private readonly GitRuntimePreference runtimePreference;
     private readonly Func<string?> selectGitExecutable;
     private readonly RepositoryChangeMonitor changeMonitor;
-    private readonly List<GitSvnPublishSnapshot> preparedPublishSnapshots = new List<GitSvnPublishSnapshot>();
+    private readonly PublishConfirmationViewModel publishConfirmation = new PublishConfirmationViewModel();
+    private readonly WorkspaceOutputLogger outputLogger;
     private readonly RepositorySessionState repositoryState = new RepositorySessionState();
     private GitSvnWorkspaceService? service;
     private string currentSolutionDirectory = string.Empty;
@@ -65,7 +42,6 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
     private bool isBusy;
     private bool isRuntimeReady;
     private bool isRuntimePanelOpen = true;
-    private bool isPublishConfirmationOpen;
     private bool disposed;
     private bool refreshSolutionAfterBusy;
     private CancellationTokenSource? operationCancellation;
@@ -75,6 +51,8 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
     {
         this.package = package ?? throw new ArgumentNullException(nameof(package));
         this.selectGitExecutable = selectGitExecutable ?? throw new ArgumentNullException(nameof(selectGitExecutable));
+        outputLogger = new WorkspaceOutputLogger(package);
+        publishConfirmation.PropertyChanged += OnPublishConfirmationChanged;
         runtimeDetector = new GitSvnRuntimeDetector();
         runtimePreference = new GitRuntimePreference();
         changeMonitor = new RepositoryChangeMonitor(OnRepositoryChangedAsync);
@@ -100,7 +78,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<RepositoryViewModel> Repositories { get; } = new ObservableCollection<RepositoryViewModel>();
-    public ObservableCollection<PublishCommitViewModel> PendingPublishItems { get; } = new ObservableCollection<PublishCommitViewModel>();
+    public ObservableCollection<PublishCommitViewModel> PendingPublishItems => publishConfirmation.PendingPublishItems;
 
     public AsyncCommand InitializeCommand { get; }
     public AsyncCommand RefreshCommand { get; }
@@ -208,19 +186,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         string.IsNullOrWhiteSpace(RuntimePath) ? Visibility.Collapsed : Visibility.Visible;
     public Visibility WorkspaceVisibility => IsRuntimeReady ? Visibility.Visible : Visibility.Collapsed;
 
-    public bool IsPublishConfirmationOpen
-    {
-        get => isPublishConfirmationOpen;
-        private set
-        {
-            if (SetProperty(ref isPublishConfirmationOpen, value))
-            {
-                OnPropertyChanged(nameof(PublishConfirmationVisibility));
-                ConfirmPublishCommand.RaiseCanExecuteChanged();
-                CancelPublishCommand.RaiseCanExecuteChanged();
-            }
-        }
-    }
+    public bool IsPublishConfirmationOpen => publishConfirmation.IsPublishConfirmationOpen;
 
     public Visibility PublishConfirmationVisibility =>
         IsPublishConfirmationOpen ? Visibility.Visible : Visibility.Collapsed;
@@ -262,22 +228,8 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         ? "게시할 커밋 없음"
         : TotalPendingCommits + "개 커밋 SVN에 게시";
 
-    public string PublishConfirmationSubtitle =>
-        "커밋 " + PendingPublishItems.Count + "개를 아래 순서대로 게시합니다.";
-
-    public string PublishTargetSummary
-    {
-        get
-        {
-            var targets = preparedPublishSnapshots
-                .SelectMany(snapshot => snapshot.SvnTargets)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            return targets.Length == 0
-                ? "SVN 대상 확인 불가"
-                : string.Join("  ·  ", targets);
-        }
-    }
+    public string PublishConfirmationSubtitle => publishConfirmation.PublishConfirmationSubtitle;
+    public string PublishTargetSummary => publishConfirmation.PublishTargetSummary;
 
     public void Dispose()
     {
@@ -290,6 +242,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         operationCancellation?.Cancel();
         package.SolutionContextChanged -= OnSolutionContextChanged;
         changeMonitor.Dispose();
+        publishConfirmation.PropertyChanged -= OnPublishConfirmationChanged;
     }
 
     private bool CanRunAll() => !IsBusy && IsRuntimeReady && Repositories.Count > 0;
@@ -583,7 +536,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         repositoryState.SetOutcomes(outcomes);
         foreach (var outcome in outcomes)
         {
-            await LogOperationOutcomeAsync(outcome);
+            await outputLogger.LogOperationOutcomeAsync(outcome);
         }
 
         await RefreshRepositoriesAsync(RepositoryRefreshReason.Internal);
@@ -641,7 +594,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
                     : RepositoryOperationOutcomeKind.Failed,
                 result.Message);
         repositoryState.SetOutcome(outcome);
-        await LogOperationOutcomeAsync(outcome);
+        await outputLogger.LogOperationOutcomeAsync(outcome);
         await RefreshRepositoriesAsync(RepositoryRefreshReason.Internal);
         StatusText = BuildOperationStatus(outcome);
     }
@@ -694,16 +647,13 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
                     safeMessage);
                 repositoryState.ApplyPublishResult(preparationResult);
                 ApplyOperationOutcomesToRows();
-                await LogAsync(preparation.Outcome);
+                await outputLogger.LogAsync(preparation.Outcome);
                 StatusText = BuildPublishSummary(preparationResult);
                 ClosePublishConfirmation();
                 return;
             }
 
-            preparedPublishSnapshots.AddRange(preparation.Snapshots);
-
-            PopulatePublishItems(preparedPublishSnapshots);
-            IsPublishConfirmationOpen = PendingPublishItems.Count > 0;
+            publishConfirmation.Prepare(preparation.Snapshots);
             StatusText = "확인한 상태가 바뀌면 게시를 자동으로 중단합니다.";
         });
 
@@ -722,8 +672,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
 
     private async Task ConfirmPublishAsync()
     {
-        var snapshots = preparedPublishSnapshots.ToArray();
-        ClosePublishConfirmation();
+        var snapshots = publishConfirmation.TakeSnapshots();
         if (snapshots.Length == 0)
         {
             return;
@@ -740,7 +689,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
                 OperationToken);
             foreach (var outcome in batchResult.Outcomes)
             {
-                await LogPublishOutcomeAsync(outcome);
+                await outputLogger.LogPublishOutcomeAsync(outcome);
             }
         });
 
@@ -835,31 +784,17 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         }
     }
 
-    private void PopulatePublishItems(IEnumerable<GitSvnPublishSnapshot> snapshots)
+    private void ClosePublishConfirmation() => publishConfirmation.Close();
+
+    private void OnPublishConfirmationChanged(object? sender, PropertyChangedEventArgs eventArgs)
     {
-        PendingPublishItems.Clear();
-        foreach (var snapshot in snapshots)
+        OnPropertyChanged(eventArgs.PropertyName);
+        if (eventArgs.PropertyName == nameof(IsPublishConfirmationOpen))
         {
-            foreach (var commit in snapshot.PendingCommits)
-            {
-                PendingPublishItems.Add(new PublishCommitViewModel(
-                    snapshot.RepositoryName,
-                    commit.Subject,
-                    commit.ShortHash));
-            }
+            OnPropertyChanged(nameof(PublishConfirmationVisibility));
+            ConfirmPublishCommand.RaiseCanExecuteChanged();
+            CancelPublishCommand.RaiseCanExecuteChanged();
         }
-
-        OnPropertyChanged(nameof(PublishConfirmationSubtitle));
-        OnPropertyChanged(nameof(PublishTargetSummary));
-    }
-
-    private void ClosePublishConfirmation()
-    {
-        IsPublishConfirmationOpen = false;
-        PendingPublishItems.Clear();
-        preparedPublishSnapshots.Clear();
-        OnPropertyChanged(nameof(PublishConfirmationSubtitle));
-        OnPropertyChanged(nameof(PublishTargetSummary));
     }
 
     private void OnPublishProgress(PublishProgress progress)
@@ -878,142 +813,6 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         StatusText = phase + " 중 (" + (progress.RepositoryIndex + 1) + "/" + progress.RepositoryCount + "): " +
                      repositoryName;
     }
-
-    private static string BuildPublishSummary(PublishBatchResult result)
-    {
-        var succeeded = result.Outcomes.Count(outcome => outcome.Kind == PublishOutcomeKind.Succeeded);
-        var failed = result.Outcomes.Count(outcome => outcome.Kind == PublishOutcomeKind.Failed);
-        var cancelled = result.Outcomes.Count(outcome => outcome.Kind == PublishOutcomeKind.Cancelled);
-        var notRun = result.Outcomes.Count(outcome => outcome.Kind == PublishOutcomeKind.NotRun);
-        var parts = new List<string>();
-        if (succeeded > 0) parts.Add("성공 " + succeeded + "개");
-        if (failed > 0) parts.Add("실패 " + failed + "개");
-        if (cancelled > 0) parts.Add("취소됨 " + cancelled + "개");
-        if (notRun > 0) parts.Add("실행 안 함 " + notRun + "개");
-
-        var problem = result.Outcomes.FirstOrDefault(outcome =>
-            outcome.Kind == PublishOutcomeKind.Failed || outcome.Kind == PublishOutcomeKind.Cancelled);
-        var summary = "게시 결과 · " + string.Join(" · ", parts);
-        return problem == null ? summary : summary + " · " + SensitiveTextRedactor.Redact(problem.Message);
-    }
-
-    private static IReadOnlyList<RepositoryOperationOutcome> BuildRebaseOutcomes(
-        IReadOnlyList<string> repositoryPaths,
-        IReadOnlyList<OperationResult> results,
-        BusyExecutionResult execution)
-    {
-        var outcomes = new List<RepositoryOperationOutcome>(repositoryPaths.Count);
-        for (var index = 0; index < repositoryPaths.Count; index++)
-        {
-            if (index < results.Count)
-            {
-                var result = results[index];
-                outcomes.Add(new RepositoryOperationOutcome(
-                    repositoryPaths[index],
-                    RepositoryOperationKind.Rebase,
-                    result.Succeeded
-                        ? RepositoryOperationOutcomeKind.Succeeded
-                        : RepositoryOperationOutcomeKind.Failed,
-                    result.Message));
-                continue;
-            }
-
-            if (index == results.Count && execution.Kind != BusyExecutionKind.Completed)
-            {
-                outcomes.Add(OutcomeFromBusyExecution(
-                    repositoryPaths[index],
-                    RepositoryOperationKind.Rebase,
-                    execution));
-                continue;
-            }
-
-            outcomes.Add(new RepositoryOperationOutcome(
-                repositoryPaths[index],
-                RepositoryOperationKind.Rebase,
-                RepositoryOperationOutcomeKind.NotRun,
-                "앞선 저장소 작업이 완료되지 않아 실행하지 않았습니다."));
-        }
-
-        return outcomes;
-    }
-
-    private static IReadOnlyList<RepositoryOperationOutcome> BuildInterruptedOutcomes(
-        IReadOnlyList<string> repositoryPaths,
-        RepositoryOperationKind operation,
-        BusyExecutionResult execution,
-        int activeIndex)
-    {
-        var boundedActiveIndex = repositoryPaths.Count == 0
-            ? -1
-            : Math.Max(0, Math.Min(activeIndex, repositoryPaths.Count - 1));
-        return repositoryPaths.Select((path, index) => index == boundedActiveIndex
-                ? OutcomeFromBusyExecution(path, operation, execution)
-                : new RepositoryOperationOutcome(
-                    path,
-                    operation,
-                    RepositoryOperationOutcomeKind.NotRun,
-                    "작업 결과를 확정하지 못해 실행 완료로 표시하지 않았습니다."))
-            .ToArray();
-    }
-
-    private static RepositoryOperationOutcome OutcomeFromBusyExecution(
-        string repositoryPath,
-        RepositoryOperationKind operation,
-        BusyExecutionResult execution)
-    {
-        var kind = execution.Kind switch
-        {
-            BusyExecutionKind.Cancelled => RepositoryOperationOutcomeKind.Cancelled,
-            BusyExecutionKind.Skipped => RepositoryOperationOutcomeKind.NotRun,
-            _ => RepositoryOperationOutcomeKind.Failed,
-        };
-        var message = execution.Kind == BusyExecutionKind.Completed
-            ? "작업 결과를 받지 못했습니다. 로그를 확인하세요."
-            : execution.Message;
-        return new RepositoryOperationOutcome(repositoryPath, operation, kind, message);
-    }
-
-    private static string BuildOperationStatus(RepositoryOperationOutcome outcome) =>
-        OperationName(outcome.Operation) + " " + OutcomeName(outcome.Kind) + " · " + outcome.Message;
-
-    private static string BuildRebaseSummary(IReadOnlyList<RepositoryOperationOutcome> outcomes) =>
-        BuildOperationSummary("SVN 변경 받기 결과", outcomes);
-
-    private static string BuildOperationSummary(
-        string title,
-        IReadOnlyList<RepositoryOperationOutcome> outcomes)
-    {
-        var succeeded = outcomes.Count(outcome => outcome.Kind == RepositoryOperationOutcomeKind.Succeeded);
-        var failed = outcomes.Count(outcome => outcome.Kind == RepositoryOperationOutcomeKind.Failed);
-        var cancelled = outcomes.Count(outcome => outcome.Kind == RepositoryOperationOutcomeKind.Cancelled);
-        var notRun = outcomes.Count(outcome => outcome.Kind == RepositoryOperationOutcomeKind.NotRun);
-        var parts = new List<string>();
-        if (succeeded > 0) parts.Add("성공 " + succeeded + "개");
-        if (failed > 0) parts.Add("실패 " + failed + "개");
-        if (cancelled > 0) parts.Add("취소됨 " + cancelled + "개");
-        if (notRun > 0) parts.Add("실행 안 함 " + notRun + "개");
-        var problem = outcomes.FirstOrDefault(outcome =>
-            outcome.Kind == RepositoryOperationOutcomeKind.Failed ||
-            outcome.Kind == RepositoryOperationOutcomeKind.Cancelled);
-        var summary = title + " · " + string.Join(" · ", parts);
-        return problem == null ? summary : summary + " · " + problem.Message;
-    }
-
-    private static string OperationName(RepositoryOperationKind operation) => operation switch
-    {
-        RepositoryOperationKind.Rebase => "SVN 변경 받기",
-        RepositoryOperationKind.Dcommit => "SVN 게시",
-        _ => "Git-SVN 작업",
-    };
-
-    private static string OutcomeName(RepositoryOperationOutcomeKind kind) => kind switch
-    {
-        RepositoryOperationOutcomeKind.Succeeded => "성공",
-        RepositoryOperationOutcomeKind.Failed => "실패",
-        RepositoryOperationOutcomeKind.Cancelled => "취소됨",
-        RepositoryOperationOutcomeKind.NotRun => "실행 안 함",
-        _ => "결과 없음",
-    };
 
     private void ClearOperationOutcomes()
     {
@@ -1044,44 +843,6 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         NotifyRepositorySummaryChanged();
     }
 
-    private async Task LogAsync(OperationResult result)
-    {
-        IVsOutputWindowPane? pane = await package.GetOutputPaneAsync(CancellationToken.None);
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-        pane?.OutputStringThreadSafe(
-            "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] [" +
-            (result.Succeeded ? "OK" : "FAIL") + "] " + result.RepositoryPath + Environment.NewLine +
-            SensitiveTextRedactor.Redact(result.Message) + Environment.NewLine + Environment.NewLine);
-    }
-
-    private async Task LogOperationOutcomeAsync(RepositoryOperationOutcome outcome)
-    {
-        IVsOutputWindowPane? pane = await package.GetOutputPaneAsync(CancellationToken.None);
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-        pane?.OutputStringThreadSafe(
-            "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] [" +
-            OutcomeName(outcome.Kind) + "] " + OperationName(outcome.Operation) + " · " +
-            outcome.RepositoryPath + Environment.NewLine + outcome.Message + Environment.NewLine + Environment.NewLine);
-    }
-
-    private async Task LogPublishOutcomeAsync(PublishRepositoryOutcome outcome)
-    {
-        IVsOutputWindowPane? pane = await package.GetOutputPaneAsync(CancellationToken.None);
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-        var label = outcome.Kind switch
-        {
-            PublishOutcomeKind.Succeeded => "SUCCESS",
-            PublishOutcomeKind.Failed => "FAIL",
-            PublishOutcomeKind.Cancelled => "CANCELLED",
-            PublishOutcomeKind.NotRun => "NOT RUN",
-            _ => "RESULT",
-        };
-        pane?.OutputStringThreadSafe(
-            "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] [" + label + "] " +
-            outcome.RepositoryPath + Environment.NewLine +
-            SensitiveTextRedactor.Redact(outcome.Message) + Environment.NewLine + Environment.NewLine);
-    }
-
     private async Task<BusyExecutionResult> RunBusyAsync(Func<Task> action)
     {
         if (IsBusy || disposed)
@@ -1107,11 +868,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         {
             var safeMessage = SensitiveTextRedactor.Redact(exception.Message);
             StatusText = "실행 실패: " + safeMessage;
-            var pane = await package.GetOutputPaneAsync(CancellationToken.None);
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            pane?.OutputStringThreadSafe(
-                "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] Git-SVN Shuttle 실행 실패: " +
-                safeMessage + Environment.NewLine);
+            await outputLogger.LogFailureAsync(safeMessage);
             return BusyExecutionResult.Failed("실행 실패: " + safeMessage);
         }
         finally
@@ -1188,229 +945,4 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
 
     private GitSvnWorkspaceService WorkspaceService =>
         service ?? throw new InvalidOperationException("Git-SVN 런타임이 준비되지 않았습니다.");
-}
-
-internal sealed class RepositoryViewModel : INotifyPropertyChanged
-{
-    private bool isExpanded;
-    private bool isProblemExpanded;
-    private bool isSelected;
-    private RepositoryOperationOutcome? operationOutcome;
-    private readonly Action<bool> selectionChanged;
-    private readonly Action<bool> expansionChanged;
-
-    public RepositoryViewModel(
-        GitSvnRepository repository,
-        Func<Task> rebase,
-        Func<Task> dcommit,
-        Func<Task> continueRebase,
-        Func<Task> abortRebase,
-        Action<bool> selectionChanged,
-        Action<bool> expansionChanged,
-        bool initiallySelected,
-        bool initiallyExpanded,
-        RepositoryOperationOutcome? initialOperationOutcome)
-    {
-        this.selectionChanged = selectionChanged ?? throw new ArgumentNullException(nameof(selectionChanged));
-        this.expansionChanged = expansionChanged ?? throw new ArgumentNullException(nameof(expansionChanged));
-        Name = repository.Name;
-        Path = repository.Path;
-        PendingCommits = repository.PendingCommits;
-        SvnBaseline = repository.SvnBaseline;
-        IsReady = repository.IsReady;
-        Problem = repository.Problem ?? string.Empty;
-        IsRebaseInProgress = repository.IsRebaseInProgress;
-        ConflictedFiles = repository.ConflictedFiles;
-        CanContinueRebase = repository.CanContinueRebase;
-        IsExternalLink = repository.IsExternalLink;
-        LinkedProjectPath = repository.LinkedProjectPath ?? string.Empty;
-        SvnTargets = repository.SvnTargets;
-        isSelected = initiallySelected && repository.IsReady && repository.PendingCommits.Count > 0;
-        isExpanded = initiallyExpanded && repository.PendingCommits.Count > 0;
-        operationOutcome = initialOperationOutcome;
-        RebaseCommand = new AsyncCommand(rebase, () => repository.IsReady);
-        DcommitCommand = new AsyncCommand(dcommit, () => repository.IsReady && repository.PendingCommits.Count > 0);
-        ContinueRebaseCommand = new AsyncCommand(
-            continueRebase,
-            () => repository.IsRebaseInProgress && repository.CanContinueRebase);
-        AbortRebaseCommand = new AsyncCommand(abortRebase, () => repository.IsRebaseInProgress);
-    }
-
-    public string Name { get; }
-    public string Path { get; }
-    public IReadOnlyList<GitSvnCommit> PendingCommits { get; }
-    public GitSvnCommit? SvnBaseline { get; }
-    public bool IsReady { get; }
-    public bool CanSelect => IsReady && PendingCommits.Count > 0;
-    public string Problem { get; }
-    public string DisplayProblem => Problem;
-    public bool IsRebaseInProgress { get; }
-    public IReadOnlyList<string> ConflictedFiles { get; }
-    public bool CanContinueRebase { get; }
-    public bool IsExternalLink { get; }
-    public string LinkedProjectPath { get; }
-    public IReadOnlyList<string> SvnTargets { get; }
-    public string PathText => IsExternalLink ? "실제 작업 경로: " + Path : Path;
-    public string LinkedProjectPathText => "로드된 프로젝트: " + LinkedProjectPath;
-    public string CompactPathText => IsExternalLink
-        ? "실제: " + Path + "  ·  로드됨: " + LinkedProjectPath
-        : Path;
-    public string SvnTargetText => SvnTargets.Count switch
-    {
-        0 => "대상 확인 불가",
-        1 => SvnTargets[0],
-        _ => SvnTargets[0] + " 외 " + (SvnTargets.Count - 1) + "개",
-    };
-    public string SvnTargetTooltip => SvnTargets.Count == 0
-        ? "SVN 대상 확인 불가"
-        : string.Join(Environment.NewLine, SvnTargets);
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public bool IsSelected
-    {
-        get => isSelected;
-        set
-        {
-            var acceptedValue = CanSelect && value;
-            if (isSelected == acceptedValue)
-            {
-                return;
-            }
-
-            isSelected = acceptedValue;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
-            selectionChanged(isSelected);
-        }
-    }
-
-    public string SelectionAutomationName => CanSelect
-        ? Name + " 저장소 게시 선택"
-        : Name + " 저장소 게시 선택 불가";
-
-    public bool CanExpand => PendingCommits.Count > 0;
-
-    public bool IsExpanded
-    {
-        get => isExpanded;
-        set
-        {
-            var acceptedValue = CanExpand && value;
-            if (isExpanded == acceptedValue)
-            {
-                return;
-            }
-
-            isExpanded = acceptedValue;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CommitDetailsVisibility)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CommitDetailsAutomationName)));
-            expansionChanged(isExpanded);
-        }
-    }
-
-    public Visibility CommitDetailsVisibility => IsExpanded ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility ExpandToggleVisibility => CanExpand ? Visibility.Visible : Visibility.Hidden;
-    public string CommitDetailsAutomationName =>
-        Name + " 게시 대기 커밋 " + (IsExpanded ? "접기" : "펼치기");
-    public Visibility ProblemVisibility =>
-        string.IsNullOrWhiteSpace(DisplayProblem) ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility ReadyStatusVisibility =>
-        string.IsNullOrWhiteSpace(DisplayProblem) ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility PendingCommitsVisibility => PendingCommits.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility NoPendingCommitsVisibility => PendingCommits.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility BaselineVisibility => SvnBaseline == null ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility RebaseRecoveryVisibility => IsRebaseInProgress ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility ConflictFilesVisibility => ConflictedFiles.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility ExternalLinkVisibility => IsExternalLink ? Visibility.Visible : Visibility.Collapsed;
-    public string ProblemLabel => IsRebaseInProgress
-        ? ConflictedFiles.Count > 0 ? "rebase 충돌" : "rebase 진행 중"
-        : Problem == "커밋되지 않은 변경이 있습니다."
-            ? "커밋되지 않은 변경"
-            : "작업 필요";
-    public string StatusText => !string.IsNullOrWhiteSpace(DisplayProblem)
-        ? ProblemLabel
-        : PendingCommits.Count == 0 ? "게시 대기 없음" : "게시 가능";
-    public string PendingCountText => PendingCommits.Count + "개";
-    public string RebaseAutomationName => Name + " 저장소에서 SVN 변경 받기";
-    public string DcommitAutomationName => Name + " 저장소의 로컬 커밋을 SVN에 게시";
-    public Visibility OperationOutcomeVisibility =>
-        operationOutcome == null ? Visibility.Collapsed : Visibility.Visible;
-    public string OperationOutcomeText => operationOutcome == null
-        ? string.Empty
-        : OperationLabel(operationOutcome.Operation) + " · " + OutcomeLabel(operationOutcome.Kind);
-    public string OperationOutcomeMessage => operationOutcome?.Message ?? string.Empty;
-    public string OperationOutcomeAutomationName => string.IsNullOrWhiteSpace(OperationOutcomeText)
-        ? Name + " 저장소 작업 결과 없음"
-        : Name + " 저장소 마지막 작업 결과 " + OperationOutcomeText + ". " + OperationOutcomeMessage;
-
-    private static string OperationLabel(RepositoryOperationKind operation) => operation switch
-    {
-        RepositoryOperationKind.Rebase => "SVN 변경 받기",
-        RepositoryOperationKind.Dcommit => "SVN 게시",
-        _ => "Git-SVN 작업",
-    };
-
-    private static string OutcomeLabel(RepositoryOperationOutcomeKind kind) => kind switch
-    {
-        RepositoryOperationOutcomeKind.Succeeded => "성공",
-        RepositoryOperationOutcomeKind.Failed => "실패",
-        RepositoryOperationOutcomeKind.Cancelled => "취소됨",
-        RepositoryOperationOutcomeKind.NotRun => "실행 안 함",
-        _ => "결과 없음",
-    };
-
-    public bool IsProblemExpanded
-    {
-        get => isProblemExpanded;
-        set
-        {
-            var acceptedValue = !string.IsNullOrWhiteSpace(DisplayProblem) && value;
-            if (isProblemExpanded == acceptedValue)
-            {
-                return;
-            }
-
-            isProblemExpanded = acceptedValue;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsProblemExpanded)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProblemDetailsVisibility)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProblemAutomationName)));
-        }
-    }
-
-    public Visibility ProblemDetailsVisibility =>
-        IsProblemExpanded ? Visibility.Visible : Visibility.Collapsed;
-    public string ProblemAutomationName =>
-        Name + " 저장소 작업 필요 상태 " + (IsProblemExpanded ? "접기" : "보기");
-    public AsyncCommand RebaseCommand { get; }
-    public AsyncCommand DcommitCommand { get; }
-    public AsyncCommand ContinueRebaseCommand { get; }
-    public AsyncCommand AbortRebaseCommand { get; }
-
-    public void ApplyOperationOutcome(RepositoryOperationOutcome? outcome)
-    {
-        if (ReferenceEquals(operationOutcome, outcome))
-        {
-            return;
-        }
-
-        operationOutcome = outcome;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OperationOutcomeVisibility)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OperationOutcomeText)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OperationOutcomeMessage)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OperationOutcomeAutomationName)));
-    }
-}
-
-internal sealed class PublishCommitViewModel
-{
-    public PublishCommitViewModel(string repositoryName, string subject, string shortHash)
-    {
-        RepositoryName = repositoryName;
-        Subject = subject;
-        ShortHash = shortHash;
-    }
-
-    public string RepositoryName { get; }
-    public string Subject { get; }
-    public string ShortHash { get; }
 }

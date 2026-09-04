@@ -32,7 +32,7 @@ public sealed class RepositoryTableUiContractTests
         var codeBehind = File.ReadAllText(RepositoryPath(
             "src", "GitSvnShuttle.Vsix", "GitSvnShuttleControl.xaml.cs"));
         var viewModel = File.ReadAllText(RepositoryPath(
-            "src", "GitSvnShuttle.Vsix", "GitSvnShuttleViewModel.cs"));
+            "src", "GitSvnShuttle.Vsix", "RepositoryViewModel.cs"));
 
         Assert.Equal(2, CountOccurrences(xaml, "MouseLeftButtonUp=\"OnRepositorySummaryMouseLeftButtonUp\""));
         Assert.Contains("current is ButtonBase", codeBehind, StringComparison.Ordinal);

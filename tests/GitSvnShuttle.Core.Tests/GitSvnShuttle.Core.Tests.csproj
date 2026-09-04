@@ -12,4 +12,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\GitSvnShuttle.Core\GitSvnShuttle.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Compile the production UI-independent logic so tests need no Visual Studio host. -->
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\BusyExecutionResult.cs" Link="Presentation\BusyExecutionResult.cs" />
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\OperationOutcomeBuilder.cs" Link="Presentation\OperationOutcomeBuilder.cs" />
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\OperationPresentation.cs" Link="Presentation\OperationPresentation.cs" />
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\PublishConfirmationViewModel.cs" Link="Presentation\PublishConfirmationViewModel.cs" />
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\PublishCommitViewModel.cs" Link="Presentation\PublishCommitViewModel.cs" />
+  </ItemGroup>
 </Project>

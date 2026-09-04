@@ -615,6 +615,163 @@ public sealed class GitSvnWorkspaceServiceTests
         Assert.Contains(runner.Calls, call => call.Arguments == "rebase --abort");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task PreparedPublish_RejectsHeadChangedDuringDryRunOnEveryEntryPoint(int entryPoint)
+    {
+        const string path = @"C:\work\a";
+        var heads = new Dictionary<string, string> { [path] = "confirmed" };
+        var runner = CreateRepositoryRunner(heads);
+        var service = new GitSvnWorkspaceService(runner);
+        var preparation = await service.PrepareDcommitAsync(path, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+        runner.Calls.Clear();
+        var responder = runner.Responder!;
+        runner.Responder = (repository, arguments) =>
+        {
+            var result = responder(repository, arguments);
+            if (arguments == "svn dcommit --dry-run") heads[path] = "changed-during-dry-run";
+            return result;
+        };
+
+        var succeeded = entryPoint switch
+        {
+            0 => (await service.DcommitPreparedAsync(preparation.Snapshot!, CancellationToken.None)).Succeeded,
+            1 => (await service.DcommitPreparedAllAsync(new[] { preparation.Snapshot! }, CancellationToken.None))
+                .All(result => result.Succeeded),
+            _ => (await service.DcommitPreparedBatchAsync(new[] { preparation.Snapshot! }, null, CancellationToken.None))
+                .Succeeded,
+        };
+
+        Assert.False(succeeded);
+        Assert.Contains(runner.Calls, call => call.Arguments == "svn dcommit --dry-run");
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PreparedBatch_LaterDryRunFailurePreventsAnyPublish(bool detailedResult)
+    {
+        const string first = @"C:\work\a";
+        const string second = @"C:\work\b";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string>
+        {
+            [first] = "a", [second] = "b",
+        });
+        var service = new GitSvnWorkspaceService(runner);
+        var preparation = await service.PrepareDcommitAllAsync(new[] { first, second }, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+        runner.Calls.Clear();
+        var responder = runner.Responder!;
+        runner.Responder = (repository, arguments) => repository == second && arguments == "svn dcommit --dry-run"
+            ? new GitCommandResult(1, string.Empty, "dry-run failed")
+            : responder(repository, arguments);
+
+        if (detailedResult)
+        {
+            var result = await service.DcommitPreparedBatchAsync(preparation.Snapshots, null, CancellationToken.None);
+            Assert.Equal(new[] { PublishOutcomeKind.NotRun, PublishOutcomeKind.Failed },
+                result.Outcomes.Select(outcome => outcome.Kind));
+        }
+        else
+        {
+            var results = await service.DcommitPreparedAllAsync(preparation.Snapshots, CancellationToken.None);
+            Assert.False(Assert.Single(results).Succeeded);
+            Assert.Equal(second, results[0].RepositoryPath);
+        }
+
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
+    }
+
+    [Theory]
+    [InlineData("baseline")]
+    [InlineData("merge")]
+    [InlineData("branch")]
+    public async Task PreparedPublish_RejectsChangedBaselineAndInvalidOperationState(string change)
+    {
+        const string path = @"C:\work\a";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string> { [path] = "a" });
+        var service = new GitSvnWorkspaceService(runner);
+        var preparation = await service.PrepareDcommitAsync(path, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+        var responder = runner.Responder!;
+        runner.Responder = (repository, arguments) => (change, arguments) switch
+        {
+            ("baseline", "log --grep=git-svn-id: --format=%H -1") => Success("changed-baseline"),
+            ("merge", "log --merges --format=%H base..HEAD") => Success("merge-commit"),
+            ("branch", "symbolic-ref --quiet --short HEAD") => new GitCommandResult(1, "", "detached"),
+            _ => responder(repository, arguments),
+        };
+
+        Assert.False((await service.DcommitPreparedAsync(preparation.Snapshot!, CancellationToken.None)).Succeeded);
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DcommitConvenienceMethods_UseThePreparedPublishWorkflow(bool all)
+    {
+        const string path = @"C:\work\a";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string> { [path] = "a" });
+        var service = new GitSvnWorkspaceService(runner);
+
+        var result = all
+            ? Assert.Single(await service.DcommitAllAsync(new[] { path }, CancellationToken.None))
+            : await service.DcommitAsync(path, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Single(runner.Calls, IsActualDcommit);
+        Assert.Equal(2, runner.Calls.Count(call => call.Arguments == "svn dcommit --dry-run"));
+        Assert.True(runner.Calls.FindIndex(IsActualDcommit) >
+            runner.Calls.FindLastIndex(call => call.Arguments == "svn dcommit --dry-run"));
+    }
+
+    [Fact]
+    public async Task RebaseAll_StopsAtFirstFailureInCallerOrder()
+    {
+        var runner = new FakeGitCommandRunner
+        {
+            Responder = (repository, arguments) => arguments switch
+            {
+                "--no-optional-locks status --porcelain=v1" => Success(""),
+                "rev-parse --git-dir" => Success(Path.Combine(repository, ".git")),
+                "symbolic-ref --quiet --short HEAD" => Success("main"),
+                "svn rebase" when repository.EndsWith("b", StringComparison.Ordinal) => Success("done"),
+                "svn rebase" => new GitCommandResult(1, "", "conflict"),
+                _ => throw new InvalidOperationException("Unexpected command: " + arguments),
+            },
+        };
+        var service = new GitSvnWorkspaceService(runner);
+
+        var results = await service.RebaseAllAsync(new[] { @"C:\work\b", @"C:\work\a", @"C:\work\c" },
+            CancellationToken.None);
+
+        Assert.Equal(new[] { true, false }, results.Select(result => result.Succeeded));
+        Assert.Equal(new[] { @"C:\work\b", @"C:\work\a" }, results.Select(result => result.RepositoryPath));
+        Assert.DoesNotContain(runner.Calls, call => call.WorkingDirectory == @"C:\work\c");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RebaseRecovery_RejectsRepositoryWithoutActiveRebase(bool abort)
+    {
+        var runner = new FakeGitCommandRunner();
+        runner.Enqueue(output: @"C:\work\no-active-rebase\.git");
+        var service = new GitSvnWorkspaceService(runner);
+
+        var result = abort
+            ? await service.AbortRebaseAsync(@"C:\work\no-active-rebase", true, CancellationToken.None)
+            : await service.ContinueRebaseAsync(@"C:\work\no-active-rebase", CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("rev-parse --git-dir", Assert.Single(runner.Calls).Arguments);
+    }
+
     private static FakeGitCommandRunner CreateRepositoryRunner(
         IReadOnlyDictionary<string, string> heads,
         IReadOnlyDictionary<string, string>? svnTargets = null)

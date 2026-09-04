@@ -89,6 +89,10 @@ dotnet build src\GitSvnShuttle.Vsix\GitSvnShuttle.Vsix.csproj -c Release
 
 The VSIX is written below `src\GitSvnShuttle.Vsix\bin\Release`.
 
+## Code structure
+
+`GitSvnWorkspaceService` preserves the public API and delegates discovery, repository reads, rebase, and publishing to dedicated components. The VSIX separates repository rows, publish confirmation state, operation outcomes, and Output logging from the main view model. See [the refactoring notes](docs/refactoring.md) for responsibility ownership and verification coverage.
+
 ## Privacy and license
 
 Git-SVN Shuttle does not send telemetry or repository data to the publisher. See [PRIVACY.md](PRIVACY.md) for the exact boundary.

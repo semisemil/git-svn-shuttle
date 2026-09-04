@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -122,13 +121,7 @@ internal sealed class GitSvnPublishValidator
             return null;
         }
 
-        var gitDirectoryResult = await runner.RunAsync(
-            repositoryPath,
-            new[] { "rev-parse", "--git-dir" },
-            cancellationToken).ConfigureAwait(false);
-        var gitDirectory = gitDirectoryResult.Succeeded
-            ? GitRepositoryReader.ResolveGitDirectory(repositoryPath, gitDirectoryResult.StandardOutput)
-            : null;
+        var gitDirectory = await reader.GetGitDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
         if (gitDirectory == null)
         {
             return null;

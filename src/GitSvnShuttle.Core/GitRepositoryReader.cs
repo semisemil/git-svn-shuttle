@@ -29,13 +29,7 @@ internal sealed class GitRepositoryReader
             return RepositoryWithProblem(repositoryPath, null, "Git 상태를 읽지 못했습니다: " + status.CombinedOutput);
         }
 
-        var gitDirectoryResult = await runner.RunAsync(
-            repositoryPath,
-            new[] { "rev-parse", "--git-dir" },
-            cancellationToken).ConfigureAwait(false);
-        var gitDirectory = gitDirectoryResult.Succeeded
-            ? ResolveGitDirectory(repositoryPath, gitDirectoryResult.StandardOutput)
-            : null;
+        var gitDirectory = await GetGitDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
 
         if (gitDirectory == null)
         {
@@ -153,7 +147,7 @@ internal sealed class GitRepositoryReader
         return new OperationResult(repositoryPath, true, "사전 검사 통과");
     }
 
-    internal async Task<IReadOnlyList<GitSvnCommit>> GetPendingCommitsAsync(
+    private async Task<IReadOnlyList<GitSvnCommit>> GetPendingCommitsAsync(
         string repositoryPath,
         CancellationToken cancellationToken)
     {
@@ -186,7 +180,7 @@ internal sealed class GitRepositoryReader
             : ParseCommits(log.StandardOutput);
     }
 
-    internal async Task<GitSvnCommit?> GetCommitAsync(
+    private async Task<GitSvnCommit?> GetCommitAsync(
         string repositoryPath,
         string revision,
         CancellationToken cancellationToken)
@@ -207,7 +201,7 @@ internal sealed class GitRepositoryReader
         return log.Succeeded ? ParseCommits(log.StandardOutput).SingleOrDefault() : null;
     }
 
-    internal static IReadOnlyList<GitSvnCommit> ParseCommits(string output)
+    private static IReadOnlyList<GitSvnCommit> ParseCommits(string output)
     {
         const string separator = "\u001f";
         return output
@@ -278,7 +272,7 @@ internal sealed class GitRepositoryReader
                 .FirstOrDefault(line => line.Length > 0)
             : null;
 
-    internal static string? ResolveGitDirectory(string repositoryPath, string gitDirectoryValue)
+    private static string? ResolveGitDirectory(string repositoryPath, string gitDirectoryValue)
     {
         var value = gitDirectoryValue
             .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
@@ -309,7 +303,7 @@ internal sealed class GitRepositoryReader
         }
     }
 
-    internal static string? FindOperationProblem(string gitDirectory)
+    private static string? FindOperationProblem(string gitDirectory)
     {
         if (File.Exists(Path.Combine(gitDirectory, "MERGE_HEAD")))
         {
@@ -328,7 +322,7 @@ internal sealed class GitRepositoryReader
         Directory.Exists(Path.Combine(gitDirectory, "rebase-merge")) ||
         Directory.Exists(Path.Combine(gitDirectory, "rebase-apply"));
 
-    internal static GitSvnRepository RepositoryWithProblem(
+    private static GitSvnRepository RepositoryWithProblem(
         string path,
         string? gitDirectory,
         string problem,
