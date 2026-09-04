@@ -12,7 +12,7 @@ using Task = System.Threading.Tasks.Task;
 namespace GitSvnShuttle.Vsix;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("Git-SVN Shuttle", "Git-SVN rebase and dcommit for Visual Studio", "0.4.0")]
+[InstalledProductRegistration("Git-SVN Shuttle", "Git-SVN rebase and dcommit for Visual Studio", "0.4.1")]
 [ProvideMenuResource("GitSvnShuttle.CTMENU", 1)]
 [ProvideToolWindow(typeof(GitSvnShuttleToolWindow), Style = VsDockStyle.Tabbed, Window = ToolWindowGuids80.SolutionExplorer)]
 [Guid(PackageGuidString)]
