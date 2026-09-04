@@ -12,7 +12,7 @@ using Task = System.Threading.Tasks.Task;
 namespace GitSvnShuttle.Vsix;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("Git-SVN Shuttle", "Git-SVN rebase and dcommit for Visual Studio", "0.3.9")]
+[InstalledProductRegistration("Git-SVN Shuttle", "Git-SVN rebase and dcommit for Visual Studio", "0.4.0")]
 [ProvideMenuResource("GitSvnShuttle.CTMENU", 1)]
 [ProvideToolWindow(typeof(GitSvnShuttleToolWindow), Style = VsDockStyle.Tabbed, Window = ToolWindowGuids80.SolutionExplorer)]
 [Guid(PackageGuidString)]
@@ -122,6 +122,18 @@ public sealed class GitSvnShuttlePackage : AsyncPackage, IVsSolutionEvents
         outputWindow.CreatePane(ref paneGuid, "Git-SVN Shuttle", 1, 1);
         outputWindow.GetPane(ref paneGuid, out var pane);
         return pane;
+    }
+
+    internal async Task<bool> ShowOutputPaneAsync(CancellationToken cancellationToken)
+    {
+        var pane = await GetOutputPaneAsync(cancellationToken);
+        if (pane == null)
+        {
+            return false;
+        }
+
+        await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        return ErrorHandler.Succeeded(pane.Activate());
     }
 
     int IVsSolutionEvents.OnAfterOpenProject(IVsHierarchy hierarchy, int added) => VSConstants.S_OK;

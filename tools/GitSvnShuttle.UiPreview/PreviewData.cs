@@ -43,6 +43,9 @@ internal static class PreviewData
                 PendingCountText = "2개",
                 IsSelected = true,
                 ExternalLinkVisibility = Visibility.Visible,
+                OperationOutcomeText = "SVN 변경 받기 · 실패",
+                OperationOutcomeMessage = "인증 정보를 확인하지 못했습니다. 로그 보기를 눌러 명령 출력을 확인하세요.",
+                OperationOutcomeVisibility = Visibility.Visible,
                 PendingCommits = new ObservableCollection<PreviewCommit>
                 {
                     new PreviewCommit("1fe0ac3", "공통 직렬화 포맷 보정", "semi", "어제 18:10"),
@@ -123,6 +126,7 @@ internal sealed class PreviewViewModel
     public ICommand ConfirmPublishCommand => Command;
     public ICommand CancelPublishCommand => Command;
     public ICommand CancelOperationCommand => Command;
+    public ICommand ShowLogCommand => Command;
 }
 
 internal sealed class PreviewRepository : INotifyPropertyChanged
@@ -163,9 +167,9 @@ internal sealed class PreviewRepository : INotifyPropertyChanged
     public string RebaseAutomationName => Name + " 저장소에서 SVN 변경 받기";
     public string DcommitAutomationName => Name + " 저장소를 SVN에 게시";
     public string ProblemAutomationName => Name + " 작업 필요 상태 보기";
-    public string PublishOutcomeAutomationName => Name + " 게시 결과 없음";
-    public string PublishOutcomeText { get; set; } = string.Empty;
-    public string PublishOutcomeMessage { get; set; } = string.Empty;
+    public string OperationOutcomeAutomationName => Name + " 마지막 작업 결과 " + OperationOutcomeText;
+    public string OperationOutcomeText { get; set; } = string.Empty;
+    public string OperationOutcomeMessage { get; set; } = string.Empty;
     public Visibility CommitDetailsVisibility { get; set; } = Visibility.Collapsed;
     public Visibility ExpandToggleVisibility => PendingCommits.Count > 0 ? Visibility.Visible : Visibility.Hidden;
     public Visibility ProblemVisibility { get; set; } = Visibility.Collapsed;
@@ -176,7 +180,7 @@ internal sealed class PreviewRepository : INotifyPropertyChanged
     public Visibility RebaseRecoveryVisibility => Visibility.Collapsed;
     public Visibility ConflictFilesVisibility => Visibility.Collapsed;
     public Visibility ExternalLinkVisibility { get; set; } = Visibility.Collapsed;
-    public Visibility PublishOutcomeVisibility => Visibility.Collapsed;
+    public Visibility OperationOutcomeVisibility { get; set; } = Visibility.Collapsed;
     public Visibility ProblemDetailsVisibility => Visibility.Collapsed;
     public ObservableCollection<string> ConflictedFiles { get; } = new ObservableCollection<string>();
     public ObservableCollection<PreviewCommit> PendingCommits { get; set; } = new ObservableCollection<PreviewCommit>();

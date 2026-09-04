@@ -48,9 +48,9 @@ public sealed class GitSvnRuntimeDetector
 
     public GitSvnRuntimeDetector()
         : this(
-            ProcessGitCommandRunner.ResolveExecutablePath,
+            GitExecutableResolver.ResolveExecutablePath,
             path => new ProcessGitCommandRunner(path),
-            () => ProcessGitCommandRunner.FindCandidateExecutablePaths(),
+            () => GitExecutableResolver.FindCandidateExecutablePaths(),
             GetProbeDirectory())
     {
     }

@@ -38,7 +38,7 @@ The root repository is processed first, followed by nested repositories in path 
 5. Select the repositories to publish and expand each row to review its pending commits.
 6. Use the download icon for one repository or **모두 받기** before publishing.
 7. Use an upload icon to publish one repository, or publish the selected repositories in the displayed selection order. Confirm the SVN destination and exact commits before starting. If HEAD, pending commits, the SVN baseline, or SVN configuration changes, publishing stops and requires a new confirmation.
-8. Read detailed command output under **View > Output > Git-SVN Shuttle**.
+8. Select **로그 보기** in the tool window, or use **View > Output > Git-SVN Shuttle**, to read timestamped command results and failure details.
 
 When a loaded project is linked through a directory junction, the repository card identifies it as an external link and shows the physical Git working path used for Git-SVN operations.
 

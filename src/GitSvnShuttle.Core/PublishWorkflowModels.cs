@@ -19,6 +19,40 @@ public enum PublishOutcomeKind
     NotRun,
 }
 
+public enum RepositoryOperationKind
+{
+    Rebase,
+    Dcommit,
+}
+
+public enum RepositoryOperationOutcomeKind
+{
+    Succeeded,
+    Failed,
+    Cancelled,
+    NotRun,
+}
+
+public sealed class RepositoryOperationOutcome
+{
+    public RepositoryOperationOutcome(
+        string repositoryPath,
+        RepositoryOperationKind operation,
+        RepositoryOperationOutcomeKind kind,
+        string message)
+    {
+        RepositoryPath = repositoryPath;
+        Operation = operation;
+        Kind = kind;
+        Message = SensitiveTextRedactor.Redact(message);
+    }
+
+    public string RepositoryPath { get; }
+    public RepositoryOperationKind Operation { get; }
+    public RepositoryOperationOutcomeKind Kind { get; }
+    public string Message { get; }
+}
+
 public sealed class PublishProgress
 {
     public PublishProgress(

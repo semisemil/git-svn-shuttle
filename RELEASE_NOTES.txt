@@ -1,3 +1,11 @@
+Git-SVN Shuttle 0.4.0
+
+- rebase와 dcommit의 저장소별 성공·실패·취소·실행 안 함 결과와 원인을 화면에 유지합니다.
+- 상단의 로그 보기에서 Visual Studio Git-SVN Shuttle 출력 창을 바로 엽니다.
+- 예외가 발생한 전체 rebase를 성공으로 잘못 표시하지 않습니다.
+- Visual Studio 라이트·다크 테마의 상태별 버튼 색상 리소스를 올바른 쌍으로 사용합니다.
+- 실제 로컬 SVN 환경에서 루트와 중첩 저장소의 자동 탐색, rebase, dcommit을 함께 검증합니다.
+
 Git-SVN Shuttle 0.3.9
 
 - 여러 Git-SVN 저장소 중 게시할 저장소만 선택하고 선택 순서대로 dcommit할 수 있습니다.

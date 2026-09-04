@@ -22,8 +22,8 @@ public sealed class RepositorySessionState
 {
     private readonly OrderedRepositorySelection selection = new OrderedRepositorySelection();
     private readonly HashSet<string> expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, PublishRepositoryOutcome> outcomes =
-        new Dictionary<string, PublishRepositoryOutcome>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, RepositoryOperationOutcome> outcomes =
+        new Dictionary<string, RepositoryOperationOutcome>(StringComparer.OrdinalIgnoreCase);
 
     public int SelectedCount => selection.Count;
     public IReadOnlyList<string> SelectedPaths => selection.SelectedPaths;
@@ -56,18 +56,28 @@ public sealed class RepositorySessionState
 
     public bool IsExpanded(string path) => expandedPaths.Contains(path);
 
-    public PublishRepositoryOutcome? GetOutcome(string path) =>
+    public RepositoryOperationOutcome? GetOutcome(string path) =>
         outcomes.TryGetValue(path, out var outcome) ? outcome : null;
 
-    public void SetOutcomes(IEnumerable<PublishRepositoryOutcome> publishOutcomes)
+    public void SetOutcome(RepositoryOperationOutcome outcome)
     {
-        if (publishOutcomes == null)
+        if (outcome == null)
         {
-            throw new ArgumentNullException(nameof(publishOutcomes));
+            throw new ArgumentNullException(nameof(outcome));
+        }
+
+        outcomes[outcome.RepositoryPath] = outcome;
+    }
+
+    public void SetOutcomes(IEnumerable<RepositoryOperationOutcome> operationOutcomes)
+    {
+        if (operationOutcomes == null)
+        {
+            throw new ArgumentNullException(nameof(operationOutcomes));
         }
 
         outcomes.Clear();
-        foreach (var outcome in publishOutcomes)
+        foreach (var outcome in operationOutcomes)
         {
             outcomes[outcome.RepositoryPath] = outcome;
         }
@@ -80,7 +90,18 @@ public sealed class RepositorySessionState
             throw new ArgumentNullException(nameof(result));
         }
 
-        SetOutcomes(result.Outcomes);
+        SetOutcomes(result.Outcomes.Select(outcome => new RepositoryOperationOutcome(
+            outcome.RepositoryPath,
+            RepositoryOperationKind.Dcommit,
+            outcome.Kind switch
+            {
+                PublishOutcomeKind.Succeeded => RepositoryOperationOutcomeKind.Succeeded,
+                PublishOutcomeKind.Failed => RepositoryOperationOutcomeKind.Failed,
+                PublishOutcomeKind.Cancelled => RepositoryOperationOutcomeKind.Cancelled,
+                PublishOutcomeKind.NotRun => RepositoryOperationOutcomeKind.NotRun,
+                _ => throw new ArgumentOutOfRangeException(nameof(outcome.Kind)),
+            },
+            outcome.Message)));
         foreach (var outcome in result.Outcomes.Where(outcome =>
                      outcome.Kind == PublishOutcomeKind.Succeeded))
         {

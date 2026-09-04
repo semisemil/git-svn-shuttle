@@ -12,6 +12,15 @@ var repositories = args.Skip(1).ToArray();
 var before = new Dictionary<string, (string Branch, string Head)>(StringComparer.OrdinalIgnoreCase);
 var snapshots = new List<GitSvnPublishSnapshot>();
 
+var discovered = await service.DiscoverAsync(repositories[0], CancellationToken.None);
+Require(discovered.Count == repositories.Length, "nested repository discovery returned an unexpected repository count");
+Require(
+    discovered.Select(repository => Path.GetFullPath(repository.Path)).SequenceEqual(
+        repositories.Select(Path.GetFullPath),
+        StringComparer.OrdinalIgnoreCase),
+    "nested repositories were not discovered in root-first path order");
+Console.WriteLine("NESTED_DISCOVERY=PASS");
+
 foreach (var repository in repositories)
 {
     var rebase = await service.RebaseAsync(repository, CancellationToken.None);

@@ -82,7 +82,7 @@ public sealed class RepositoryTableUiContractTests
     }
 
     [Fact]
-    public void PublishOutcomes_AreSeparateFromCurrentStatusAndRefreshLifecycleIsExplicit()
+    public void OperationOutcomesAndLogs_AreVisiblePersistentAndOpenable()
     {
         var xaml = File.ReadAllText(RepositoryPath(
             "src", "GitSvnShuttle.Vsix", "GitSvnShuttleControl.xaml"));
@@ -91,12 +91,18 @@ public sealed class RepositoryTableUiContractTests
         var package = File.ReadAllText(RepositoryPath(
             "src", "GitSvnShuttle.Vsix", "GitSvnShuttlePackage.cs"));
 
-        Assert.Equal(2, CountOccurrences(xaml, "Visibility=\"{Binding PublishOutcomeVisibility}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Visibility=\"{Binding OperationOutcomeVisibility}\""));
         Assert.Contains("Text=\"{Binding StatusText}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"{Binding PublishOutcomeText}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ToolTip=\"{Binding PublishOutcomeMessage}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"{Binding PublishOutcomeAutomationName}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding OperationOutcomeText}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding OperationOutcomeMessage}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"{Binding OperationOutcomeAutomationName}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"로그 보기\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding ShowLogCommand}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("repositoryState.ApplyPublishResult(batchResult)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("BuildRebaseOutcomes(paths, results, execution)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("Task<BusyExecutionResult> RunBusyAsync", viewModel, StringComparison.Ordinal);
+        Assert.Contains("ShowOutputPaneAsync", package, StringComparison.Ordinal);
+        Assert.Contains("pane.Activate()", package, StringComparison.Ordinal);
         Assert.Contains("RepositoryRefreshReason.Automatic", viewModel, StringComparison.Ordinal);
         Assert.Contains("저장소 변경을 감지해 게시 확인을 닫고 준비 상태를 폐기했습니다.", viewModel, StringComparison.Ordinal);
         Assert.Contains("if (disposed || IsBusy)", viewModel, StringComparison.Ordinal);
@@ -104,6 +110,22 @@ public sealed class RepositoryTableUiContractTests
         Assert.Contains("IVsSolutionEvents.OnAfterOpenSolution", package, StringComparison.Ordinal);
         Assert.Contains("ResetRepositorySession();", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("publishPreparationProblem", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ButtonStyles_UsePairedVisualStudioThemeResources()
+    {
+        var xaml = File.ReadAllText(RepositoryPath(
+            "src", "GitSvnShuttle.Vsix", "GitSvnShuttleControl.xaml"));
+
+        Assert.Contains("ToolWindowButtonActiveGlyphKey", xaml, StringComparison.Ordinal);
+        Assert.Contains("ToolWindowButtonHoverActiveGlyphKey", xaml, StringComparison.Ordinal);
+        Assert.Contains("ToolWindowButtonDownActiveGlyphKey", xaml, StringComparison.Ordinal);
+        Assert.Contains("CommandBarSelectedKey", xaml, StringComparison.Ordinal);
+        Assert.Contains("CommandBarTextSelectedKey", xaml, StringComparison.Ordinal);
+        Assert.Contains("CommandBarTextActiveKey", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("VsBrushes.AccentMediumKey", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("VsBrushes.HighlightTextKey", xaml, StringComparison.Ordinal);
     }
 
     private static int CountOccurrences(string value, string target)

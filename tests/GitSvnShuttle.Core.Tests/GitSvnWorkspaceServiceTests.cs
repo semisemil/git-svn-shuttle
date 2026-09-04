@@ -378,6 +378,46 @@ public sealed class GitSvnWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task DcommitPreparedBatchAsync_ExceptionMapsCurrentFailureAndPreservesEarlierSuccess()
+    {
+        var repositoryA = "C:\\work\\a";
+        var repositoryB = "C:\\work\\b";
+        var repositoryC = "C:\\work\\c";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [repositoryA] = "commit-a",
+            [repositoryB] = "commit-b",
+            [repositoryC] = "commit-c",
+        });
+        var service = new GitSvnWorkspaceService(runner);
+        var preparation = await service.PrepareDcommitAllAsync(
+            new[] { repositoryA, repositoryB, repositoryC },
+            CancellationToken.None);
+        runner.ExceptionFactory = (repository, arguments) =>
+            repository == repositoryB && arguments == "svn dcommit"
+                ? new TimeoutException("request?token=abc123&mode=1")
+                : null;
+
+        var result = await service.DcommitPreparedBatchAsync(
+            preparation.Snapshots,
+            progress: null,
+            CancellationToken.None);
+
+        Assert.Equal(
+            new[]
+            {
+                PublishOutcomeKind.Succeeded,
+                PublishOutcomeKind.Failed,
+                PublishOutcomeKind.NotRun,
+            },
+            result.Outcomes.Select(outcome => outcome.Kind));
+        Assert.Contains("token=***", result.Outcomes[1].Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("abc123", result.Outcomes[1].Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(runner.Calls, call =>
+            call.WorkingDirectory == repositoryC && IsActualDcommit(call));
+    }
+
+    [Fact]
     public async Task DcommitPreparedAsync_RejectsChangedCommitListAfterConfirmation()
     {
         var repository = "C:\\work\\main";
@@ -416,6 +456,44 @@ public sealed class GitSvnWorkspaceServiceTests
 
         Assert.False(result.Succeeded);
         Assert.DoesNotContain(runner.Calls, call => call.Arguments == "svn rebase");
+    }
+
+    [Fact]
+    public async Task RebaseAsync_MapsRunnerExceptionToFailureInsteadOfThrowing()
+    {
+        var repositoryPath = Path.Combine(
+            Path.GetTempPath(),
+            "GitSvnShuttleTests",
+            "rebase-exception-" + Guid.NewGuid().ToString("N"));
+        var gitDirectory = Path.Combine(repositoryPath, ".git");
+        Directory.CreateDirectory(gitDirectory);
+        try
+        {
+            var runner = new FakeGitCommandRunner
+            {
+                Responder = (_, arguments) => arguments switch
+                {
+                    "--no-optional-locks status --porcelain=v1" => Success(string.Empty),
+                    "rev-parse --git-dir" => Success(gitDirectory),
+                    "symbolic-ref --quiet --short HEAD" => Success("main"),
+                    _ => throw new InvalidOperationException("Unexpected command: " + arguments),
+                },
+                ExceptionFactory = (_, arguments) => arguments == "svn rebase"
+                    ? new TimeoutException("request?token=abc123&mode=1")
+                    : null,
+            };
+            var service = new GitSvnWorkspaceService(runner);
+
+            var result = await service.RebaseAsync(repositoryPath, CancellationToken.None);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains("SVN 변경 가져오기 실패", result.Message, StringComparison.Ordinal);
+            Assert.Contains("token=abc123", result.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(repositoryPath, recursive: true);
+        }
     }
 
     [Fact]

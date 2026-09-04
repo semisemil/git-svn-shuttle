@@ -17,7 +17,7 @@ if (-not (Test-Path -LiteralPath $settingsPath)) {
 
 $environment = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
 
-$repositories = @($environment.externalRoot, $environment.solutionRoot)
+$repositories = @($environment.solutionRoot, $environment.externalRoot)
 $probeProject = Join-Path $repoRoot 'tests\GitSvnShuttle.DcommitProbe\GitSvnShuttle.DcommitProbe.csproj'
 & dotnet run --project $probeProject -c Release -- $environment.git @repositories
 if ($LASTEXITCODE -ne 0) {

@@ -67,9 +67,10 @@ public sealed class RepositorySessionStateTests
             Outcome("C", PublishOutcomeKind.NotRun)));
 
         Assert.Equal(new[] { "B", "C" }, state.SelectedPaths);
-        Assert.Equal(PublishOutcomeKind.Succeeded, state.GetOutcome("A")!.Kind);
-        Assert.Equal(PublishOutcomeKind.Failed, state.GetOutcome("B")!.Kind);
-        Assert.Equal(PublishOutcomeKind.NotRun, state.GetOutcome("C")!.Kind);
+        Assert.Equal(RepositoryOperationKind.Dcommit, state.GetOutcome("A")!.Operation);
+        Assert.Equal(RepositoryOperationOutcomeKind.Succeeded, state.GetOutcome("A")!.Kind);
+        Assert.Equal(RepositoryOperationOutcomeKind.Failed, state.GetOutcome("B")!.Kind);
+        Assert.Equal(RepositoryOperationOutcomeKind.NotRun, state.GetOutcome("C")!.Kind);
     }
 
     [Fact]
@@ -82,7 +83,7 @@ public sealed class RepositorySessionStateTests
         state.ApplyPublishResult(Result(Outcome("C", PublishOutcomeKind.Succeeded)));
 
         Assert.Equal(new[] { "A", "B" }, state.SelectedPaths);
-        Assert.Equal(PublishOutcomeKind.Succeeded, state.GetOutcome("C")!.Kind);
+        Assert.Equal(RepositoryOperationOutcomeKind.Succeeded, state.GetOutcome("C")!.Kind);
     }
 
     [Fact]
@@ -91,11 +92,11 @@ public sealed class RepositorySessionStateTests
         var state = new RepositorySessionState();
         state.SetSelected("A", isSelected: true, canSelect: true);
         state.SetExpanded("A", isExpanded: true, canExpand: true);
-        state.SetOutcomes(new[] { Outcome("A", PublishOutcomeKind.Cancelled) });
+        state.SetOutcomes(new[] { OperationOutcome("A", RepositoryOperationOutcomeKind.Cancelled) });
 
         state.Reconcile(new[] { new RepositoryAvailability("A", canSelect: true, canExpand: true) });
 
-        Assert.Equal(PublishOutcomeKind.Cancelled, state.GetOutcome("A")!.Kind);
+        Assert.Equal(RepositoryOperationOutcomeKind.Cancelled, state.GetOutcome("A")!.Kind);
         Assert.True(state.IsSelected("A"));
         Assert.True(state.IsExpanded("A"));
 
@@ -104,7 +105,7 @@ public sealed class RepositorySessionStateTests
         Assert.True(state.IsSelected("A"));
         Assert.True(state.IsExpanded("A"));
 
-        state.SetOutcomes(new[] { Outcome("A", PublishOutcomeKind.Cancelled) });
+        state.SetOutcomes(new[] { OperationOutcome("A", RepositoryOperationOutcomeKind.Cancelled) });
         state.Reset();
         Assert.Empty(state.SelectedPaths);
         Assert.False(state.IsExpanded("A"));
@@ -115,4 +116,9 @@ public sealed class RepositorySessionStateTests
 
     private static PublishRepositoryOutcome Outcome(string path, PublishOutcomeKind kind) =>
         new(path, path, kind, kind.ToString());
+
+    private static RepositoryOperationOutcome OperationOutcome(
+        string path,
+        RepositoryOperationOutcomeKind kind) =>
+        new(path, RepositoryOperationKind.Rebase, kind, kind.ToString());
 }
