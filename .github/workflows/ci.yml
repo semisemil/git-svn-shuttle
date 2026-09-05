@@ -83,8 +83,10 @@ jobs:
           if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'f5764d546ff9a2511b50ec4e20424c5f4669de1695abc3fa4128e7f7d4a7b2cd') {
             throw 'The Git-SVN runtime checksum does not match.'
           }
-          $extract = Start-Process -FilePath $archive -ArgumentList @('-y', '-gm2', "-InstallPath=`"$gitRoot`"") -Wait -PassThru -WindowStyle Hidden
-          if ($extract.ExitCode -ne 0) { throw 'Git-SVN runtime extraction failed.' }
+          & 7z x $archive "-o$gitRoot" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime extraction failed.' }
+          & "$gitRoot/post-install.bat"
+          if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime initialization failed.' }
           & "$gitRoot/cmd/git.exe" svn --version
           if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime is unavailable.' }
           "$gitRoot/cmd" >> $env:GITHUB_PATH
