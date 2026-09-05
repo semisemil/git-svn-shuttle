@@ -85,8 +85,8 @@ jobs:
           }
           & 7z x $archive "-o$gitRoot" -y
           if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime extraction failed.' }
-          & "$gitRoot/post-install.bat"
-          if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime initialization failed.' }
+          $initialize = Start-Process -FilePath "$gitRoot/git-bash.exe" -ArgumentList @('--no-needs-console', '--hide', '--no-cd', '--command=post-install.bat') -Wait -PassThru -WindowStyle Hidden
+          if ($initialize.ExitCode -ne 0) { throw 'Git-SVN runtime initialization failed.' }
           & "$gitRoot/cmd/git.exe" svn --version
           if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime is unavailable.' }
           "$gitRoot/cmd" >> $env:GITHUB_PATH
