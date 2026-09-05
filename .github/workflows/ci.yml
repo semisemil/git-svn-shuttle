@@ -73,6 +73,21 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.x'
+      # Recent Git for Windows releases no longer bundle git-svn.
+      # Match the known working local test runtime in an isolated directory.
+      - name: Set up Git-SVN runtime
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'PortableGit.7z.exe'
+          $gitRoot = Join-Path $env:RUNNER_TEMP 'GitSvnRuntime'
+          Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/download/v2.51.2.windows.1/PortableGit-2.51.2-64-bit.7z.exe' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'f5764d546ff9a2511b50ec4e20424c5f4669de1695abc3fa4128e7f7d4a7b2cd') {
+            throw 'The Git-SVN runtime checksum does not match.'
+          }
+          $extract = Start-Process -FilePath $archive -ArgumentList @('-y', '-gm2', "-InstallPath=`"$gitRoot`"") -Wait -PassThru -WindowStyle Hidden
+          if ($extract.ExitCode -ne 0) { throw 'Git-SVN runtime extraction failed.' }
+          & "$gitRoot/cmd/git.exe" svn --version
+          if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime is unavailable.' }
+          "$gitRoot/cmd" >> $env:GITHUB_PATH
       - name: Create local SVN fixture
         run: ./test-env/setup.ps1 -WorkspaceRoot "$env:RUNNER_TEMP/ShuttleTest"
       - name: Verify rebase and dcommit

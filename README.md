@@ -93,7 +93,7 @@ The VSIX is written below `src\GitSvnShuttle.Vsix\bin\Release`.
 
 GitHub Actions runs on pull requests to `main`, pushes to `main`, and version tags (`v*`). You can also run **CI** manually from the repository's **Actions** tab.
 
-The Windows jobs run the unit tests, build the Release VSIX, and exercise real rebase and dcommit operations against a disposable local SVN server. **CI passed** succeeds only when both jobs succeed. The workflow saves the VSIX and unit-test results as downloadable artifacts.
+The Windows jobs run the unit tests, build the Release VSIX, and exercise real rebase and dcommit operations against a disposable local SVN server. The integration job downloads a checksum-verified Portable Git 2.51.2 runtime because newer Git for Windows releases no longer bundle `git svn`. **CI passed** succeeds only when both jobs succeed. The workflow saves the VSIX and unit-test results as downloadable artifacts.
 
 To publish a GitHub Release, update the version in `src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj` and `src/GitSvnShuttle.Vsix/source.extension.vsixmanifest`, update `RELEASE_NOTES.txt`, and push a matching tag such as `v0.4.2`. The tag, project version, and manifest version must match. After all checks pass, the workflow creates a release with generated notes and attaches the tested VSIX. Creating the release requires no additional secret; it uses GitHub's workflow token.
 
