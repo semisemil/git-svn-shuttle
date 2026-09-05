@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build-test:
+    name: Build and test
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore git-svn-shuttle.sln
+      - name: Unit tests
+        run: dotnet test tests/GitSvnShuttle.Core.Tests/GitSvnShuttle.Core.Tests.csproj -c Release --no-restore --logger trx --results-directory TestResults
+      - name: Build VSIX
+        run: dotnet build src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj -c Release --no-restore
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          [xml]$project = Get-Content src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj
+          [xml]$manifest = Get-Content src/GitSvnShuttle.Vsix/source.extension.vsixmanifest
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ($env:RELEASE_TAG -cne "v$version" -or $manifest.PackageManifest.Metadata.Identity.Version -cne $version) {
+            throw 'The release tag, project version, and VSIX manifest version must match.'
+          }
+      - name: Save VSIX
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsix
+          path: src/GitSvnShuttle.Vsix/bin/Release/net472/GitSvnShuttle.Vsix.vsix
+          if-no-files-found: error
+      - name: Save test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          if-no-files-found: warn
+
+  svn-test:
+    name: Git-SVN integration
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Create local SVN fixture
+        run: ./test-env/setup.ps1 -WorkspaceRoot "$env:RUNNER_TEMP/ShuttleTest"
+      - name: Verify rebase and dcommit
+        run: ./test-env/smoke.ps1 -WorkspaceRoot "$env:RUNNER_TEMP/ShuttleTest"
+      - name: Stop local SVN server
+        if: always()
+        run: ./test-env/stop.ps1 -WorkspaceRoot "$env:RUNNER_TEMP/ShuttleTest"
+
+  ci:
+    name: CI passed
+    if: always()
+    needs: [build-test, svn-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all checks
+        env:
+          BUILD_RESULT: ${{ needs.build-test.result }}
+          SVN_RESULT: ${{ needs.svn-test.result }}
+        run: |
+          if ($env:BUILD_RESULT -ne 'success' -or $env:SVN_RESULT -ne 'success') {
+            throw 'Build, tests, and Git-SVN integration must all pass.'
+          }
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: vsix
+          path: release
+      - name: Publish VSIX
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create $env:RELEASE_TAG release/GitSvnShuttle.Vsix.vsix --verify-tag --title $env:RELEASE_TAG --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed.' }
+

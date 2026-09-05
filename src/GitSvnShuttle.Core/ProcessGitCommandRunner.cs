@@ -65,7 +65,17 @@ public sealed class ProcessGitCommandRunner : IGitCommandRunner
 
             process.OutputDataReceived += (_, eventArgs) => output.AppendLine(eventArgs.Data);
             process.ErrorDataReceived += (_, eventArgs) => error.AppendLine(eventArgs.Data);
-            process.Exited += (_, __) => completion.TrySetResult(process.ExitCode);
+            process.Exited += (_, __) =>
+            {
+                if (linkedSource.IsCancellationRequested)
+                {
+                    completion.TrySetCanceled();
+                }
+                else
+                {
+                    completion.TrySetResult(process.ExitCode);
+                }
+            };
 
             if (!process.Start())
             {

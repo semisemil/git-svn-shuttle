@@ -89,6 +89,16 @@ dotnet build src\GitSvnShuttle.Vsix\GitSvnShuttle.Vsix.csproj -c Release
 
 The VSIX is written below `src\GitSvnShuttle.Vsix\bin\Release`.
 
+## CI and releases
+
+GitHub Actions runs on pull requests to `main`, pushes to `main`, and version tags (`v*`). You can also run **CI** manually from the repository's **Actions** tab.
+
+The Windows jobs run the unit tests, build the Release VSIX, and exercise real rebase and dcommit operations against a disposable local SVN server. **CI passed** succeeds only when both jobs succeed. The workflow saves the VSIX and unit-test results as downloadable artifacts.
+
+To publish a GitHub Release, update the version in `src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj` and `src/GitSvnShuttle.Vsix/source.extension.vsixmanifest`, update `RELEASE_NOTES.txt`, and push a matching tag such as `v0.4.2`. The tag, project version, and manifest version must match. After all checks pass, the workflow creates a release with generated notes and attaches the tested VSIX. Creating the release requires no additional secret; it uses GitHub's workflow token.
+
+Marketplace publication remains manual. A normal code push or a manual CI run does not publish a release.
+
 ## Code structure
 
 `GitSvnWorkspaceService` preserves the public API and delegates discovery, repository reads, rebase, and publishing to dedicated components. The VSIX separates repository rows, publish confirmation state, operation outcomes, and Output logging from the main view model. See [the refactoring notes](docs/refactoring.md) for responsibility ownership and verification coverage.
