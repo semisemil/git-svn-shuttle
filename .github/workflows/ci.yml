@@ -85,8 +85,9 @@ jobs:
           }
           & 7z x $archive "-o$gitRoot" -y
           if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime extraction failed.' }
-          $initialize = Start-Process -FilePath "$gitRoot/git-bash.exe" -WorkingDirectory $gitRoot -ArgumentList @('--no-needs-console', '--hide', '--no-cd', '--command=post-install.bat') -Wait -PassThru -WindowStyle Hidden
-          if ($initialize.ExitCode -ne 0) { throw 'Git-SVN runtime initialization failed.' }
+          # Run the 64-bit package's post-install scripts without its GUI launcher.
+          & "$gitRoot/usr/bin/bash.exe" --norc -c 'export PATH=/mingw64/bin:/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in /etc/post-install/*.post; do test -e "$p" && . "$p"; done'
+          if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime initialization failed.' }
           & "$gitRoot/cmd/git.exe" svn --version
           if ($LASTEXITCODE -ne 0) { throw 'Git-SVN runtime is unavailable.' }
           "$gitRoot/cmd" >> $env:GITHUB_PATH
