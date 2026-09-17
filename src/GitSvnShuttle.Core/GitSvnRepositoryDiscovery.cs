@@ -178,6 +178,15 @@ internal sealed class GitSvnRepositoryDiscovery
         }
 
         var repositories = new List<string>();
+        // The solution may live below its repository root. Keep descendant
+        // scanning scoped to the solution, and stop at the nearest Git boundary.
+        var containingRepository = FindContainingRepositoryDirectory(root);
+        if (containingRepository != null &&
+            !string.Equals(containingRepository, root, StringComparison.OrdinalIgnoreCase))
+        {
+            repositories.Add(containingRepository);
+        }
+
         var pending = new Queue<string>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         pending.Enqueue(root);
@@ -239,7 +248,7 @@ internal sealed class GitSvnRepositoryDiscovery
         }
 
         return repositories
-            .OrderBy(path => string.Equals(path, root, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .OrderBy(path => string.Equals(path, containingRepository, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
