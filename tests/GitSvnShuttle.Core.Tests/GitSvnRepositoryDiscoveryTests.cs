@@ -107,7 +107,7 @@ public sealed class GitSvnRepositoryDiscoveryTests : IDisposable
             ConfigCommand => hasSvn
                 ? Success("svn-remote.svn.url https://svn.example.test/trunk")
                 : new GitCommandResult(1, string.Empty, string.Empty),
-            "--no-optional-locks status --porcelain=v1" => Success(string.Empty),
+            "--no-optional-locks status --porcelain=v1 --untracked-files=no" => Success(string.Empty),
             "rev-parse --git-dir" => Success(Path.Combine(repository, ".git")),
             "log --grep=git-svn-id: --format=%H -1" => Success("baseline"),
             _ when arguments.StartsWith("show -s ", StringComparison.Ordinal) =>

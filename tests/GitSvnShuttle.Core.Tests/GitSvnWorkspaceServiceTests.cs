@@ -474,7 +474,7 @@ public sealed class GitSvnWorkspaceServiceTests
             {
                 Responder = (_, arguments) => arguments switch
                 {
-                    "--no-optional-locks status --porcelain=v1" => Success(string.Empty),
+                    "--no-optional-locks status --porcelain=v1 --untracked-files=no" => Success(string.Empty),
                     "rev-parse --git-dir" => Success(gitDirectory),
                     "symbolic-ref --quiet --short HEAD" => Success("main"),
                     _ => throw new InvalidOperationException("Unexpected command: " + arguments),
@@ -505,7 +505,7 @@ public sealed class GitSvnWorkspaceServiceTests
         {
             Responder = (_, arguments) => arguments switch
             {
-                "--no-optional-locks status --porcelain=v1" => Success("UU source.cs"),
+                "--no-optional-locks status --porcelain=v1 --untracked-files=no" => Success("UU source.cs"),
                 "rev-parse --git-dir" => Success(repository.GitDirectory),
                 "diff --name-only --diff-filter=U -z" => Success("source.cs\0docs/안내.md\0"),
                 _ => throw new InvalidOperationException("Unexpected fake Git call: " + arguments),
@@ -552,7 +552,7 @@ public sealed class GitSvnWorkspaceServiceTests
         {
             Responder = (_, arguments) => arguments switch
             {
-                "--no-optional-locks status --porcelain=v1" => Success("M  source.cs"),
+                "--no-optional-locks status --porcelain=v1 --untracked-files=no" => Success("M  source.cs"),
                 "rev-parse --git-dir" => Success(repository.GitDirectory),
                 "diff --name-only --diff-filter=U -z" => Success(string.Empty),
                 "diff --cached --quiet --exit-code" => new GitCommandResult(1, string.Empty, string.Empty),
@@ -738,7 +738,7 @@ public sealed class GitSvnWorkspaceServiceTests
         {
             Responder = (repository, arguments) => arguments switch
             {
-                "--no-optional-locks status --porcelain=v1" => Success(""),
+                "--no-optional-locks status --porcelain=v1 --untracked-files=no" => Success(""),
                 "rev-parse --git-dir" => Success(Path.Combine(repository, ".git")),
                 "symbolic-ref --quiet --short HEAD" => Success("main"),
                 "svn rebase" when repository.EndsWith("b", StringComparison.Ordinal) => Success("done"),
@@ -830,8 +830,8 @@ public sealed class GitSvnWorkspaceServiceTests
                 Success("changed\u001fchanged\u001fKim\u001f2026-09-05\u001fDifferent commit"),
             ("config", "config --get-regexp ^(svn\\.|svn-remote\\.)") => Success("svn-remote.svn.url https://svn.test/other"),
             ("baseline", "log --grep=git-svn-id: --format=%H -1") => Success("changed-base"),
-            ("dirty", "--no-optional-locks status --porcelain=v1") => Success(" M file.cs"),
-            ("status-failed", "--no-optional-locks status --porcelain=v1") => new GitCommandResult(1, "", "unreadable"),
+            ("dirty", "--no-optional-locks status --porcelain=v1 --untracked-files=no") => Success(" M file.cs"),
+            ("status-failed", "--no-optional-locks status --porcelain=v1 --untracked-files=no") => new GitCommandResult(1, "", "unreadable"),
             ("missing-git-directory", "rev-parse --git-dir") => Success(""),
             _ => responder(repository, arguments),
         };
@@ -896,7 +896,7 @@ public sealed class GitSvnWorkspaceServiceTests
                 return Success(Path.Combine(repository, ".git"));
             }
 
-            if (arguments == "--no-optional-locks status --porcelain=v1" ||
+            if (arguments == "--no-optional-locks status --porcelain=v1 --untracked-files=no" ||
                 arguments.StartsWith("log --merges --format=%H", StringComparison.Ordinal))
             {
                 return Success(string.Empty);
