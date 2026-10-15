@@ -97,7 +97,7 @@ The Windows jobs run the unit tests, build the Release VSIX, and exercise real r
 
 To publish a GitHub Release, update the version in `src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj` and `src/GitSvnShuttle.Vsix/source.extension.vsixmanifest`, update `RELEASE_NOTES.txt`, and push a matching tag such as `v0.4.2`. The tag, project version, and manifest version must match. After all checks pass, the workflow creates a release with generated notes and attaches the tested VSIX. Creating the release requires no additional secret; it uses GitHub's workflow token.
 
-Marketplace publication remains manual. A normal code push or a manual CI run does not publish a release.
+To publish to Visual Studio Marketplace, add the publisher's Azure DevOps PAT as the repository Actions secret `VS_MARKETPLACE_TOKEN`, with **Marketplace (Publish)** permission. Run **CI** manually with `marketplace_mode: validate` to check the tested VSIX identity/version against the existing public listing, then use `marketplace_mode: publish` to upload that run's tested VSIX after both Windows jobs pass. The publisher must have access to `semisemil`; token values belong only in GitHub's secret settings. Publication verifies that the new version appears in the public Marketplace query. Keep the default `skip` for ordinary development; pushes, PRs, and version tags do not automatically publish to Marketplace.
 
 ## Code structure
 

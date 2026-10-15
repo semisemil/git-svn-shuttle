@@ -7,13 +7,19 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      marketplace_mode:
+        description: 'Marketplace action after all Windows checks pass'
+        type: choice
+        options: [skip, validate, publish]
+        default: skip
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.marketplace_mode || 'skip' }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && inputs.marketplace_mode != 'publish' }}
 
 defaults:
   run:
@@ -114,6 +120,46 @@ jobs:
           if ($env:BUILD_RESULT -ne 'success' -or $env:SVN_RESULT -ne 'success') {
             throw 'Build, tests, and Git-SVN integration must all pass.'
           }
+
+  marketplace:
+    name: Visual Studio Marketplace
+    if: github.event_name == 'workflow_dispatch' && inputs.marketplace_mode != 'skip'
+    needs: [ci]
+    runs-on: windows-2025
+    timeout-minutes: 15
+    concurrency:
+      group: marketplace-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: vsix
+          path: release
+      - name: Validate package and published version
+        run: ./tools/Publish-Marketplace.ps1 -VsixPath release/GitSvnShuttle.Vsix.vsix -ValidateOnly
+      - name: Check publishing credential
+        if: inputs.marketplace_mode == 'publish'
+        env:
+          VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_TOKEN)) {
+            throw 'Add repository secret VS_MARKETPLACE_TOKEN with Marketplace (Publish) permission for publisher semisemil.'
+          }
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        if: inputs.marketplace_mode == 'publish'
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore publishing tool
+        if: inputs.marketplace_mode == 'publish'
+        run: dotnet restore src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj
+      - name: Publish and verify public version
+        if: inputs.marketplace_mode == 'publish'
+        env:
+          VS_MARKETPLACE_TOKEN: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+        run: ./tools/Publish-Marketplace.ps1 -VsixPath release/GitSvnShuttle.Vsix.vsix
 
   release:
     name: Publish GitHub Release
