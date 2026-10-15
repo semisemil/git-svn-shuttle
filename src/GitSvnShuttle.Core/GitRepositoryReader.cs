@@ -21,7 +21,7 @@ internal sealed class GitRepositoryReader
     {
         var status = await runner.RunAsync(
             repositoryPath,
-            new[] { "--no-optional-locks", "status", "--porcelain=v1" },
+            new[] { "--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=no" },
             cancellationToken).ConfigureAwait(false);
 
         if (!status.Succeeded)
@@ -102,7 +102,7 @@ internal sealed class GitRepositoryReader
     {
         var status = await runner.RunAsync(
             repositoryPath,
-            new[] { "--no-optional-locks", "status", "--porcelain=v1" },
+            new[] { "--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=no" },
             cancellationToken).ConfigureAwait(false);
         if (!status.Succeeded)
         {

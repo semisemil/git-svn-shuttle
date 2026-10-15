@@ -85,7 +85,7 @@ public sealed class SecurityBoundaryTests
                         return Success("svn-remote.svn.url https://svn.example.test/demo/trunk");
                     }
 
-                    if (arguments == "--no-optional-locks status --porcelain=v1")
+                    if (arguments == "--no-optional-locks status --porcelain=v1 --untracked-files=no")
                     {
                         return Success(string.Empty);
                     }

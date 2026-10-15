@@ -19,11 +19,11 @@ Open **Tools > Git-SVN Shuttle** in Visual Studio. The tool window shows every G
 
 The table keeps repository identity, current state, pending count, SVN destination, and individual actions visible. It switches to a compact two-line layout in narrow tool windows without horizontal scrolling.
 
-Uncommitted file changes are shown separately in the repository header. They are not part of the dcommit list, and that repository's action buttons remain disabled until the changes are committed or discarded.
+Uncommitted changes to tracked files, including staged additions, are shown separately in the repository header. They are not part of the dcommit list, and that repository's action buttons remain disabled until the changes are committed or discarded. Untracked files (`??` in Git status) do not block rebase or publishing and remain outside the dcommit list.
 
 If `git svn rebase` stops on conflicts, the repository shows the unresolved files separately. Resolve and stage them with Visual Studio's Git tools, then continue the rebase from Git-SVN Shuttle, or explicitly confirm that you want to abort it.
 
-Before a rebase, the extension requires a clean working tree and an attached branch. Before dcommit, it additionally rejects merge commits and runs `git svn dcommit --dry-run`. The confirmation records the exact HEAD, pending commit hashes, SVN baseline, and SVN configuration. Confirming revalidates that snapshot and runs dcommit only while the current branch still points to the confirmed HEAD; any mismatch aborts the operation. **Publish all** preflights every repository before publishing the first one, then stops at the first failure. SVN cannot make publishing across multiple repositories atomic, so earlier successful dcommits cannot be rolled back automatically.
+Before a rebase, the extension requires no uncommitted changes to tracked files and an attached branch. Before dcommit, it additionally rejects merge commits and runs `git svn dcommit --dry-run`. The confirmation records the exact HEAD, pending commit hashes, SVN baseline, and SVN configuration. Confirming revalidates that snapshot and runs dcommit only while the current branch still points to the confirmed HEAD; any mismatch aborts the operation. **Publish all** preflights every repository before publishing the first one, then stops at the first failure. SVN cannot make publishing across multiple repositories atomic, so earlier successful dcommits cannot be rolled back automatically.
 
 Repository and Git metadata changes are monitored through debounced filesystem notifications. This keeps the UI current without periodic Git polling. While publish confirmation is open, notifications first trigger a local snapshot check: delayed or duplicate notifications keep the confirmation open when the prepared state still matches. A changed snapshot invalidates the confirmation. The snapshot validation before dcommit remains the final safety boundary even if a filesystem notification is delayed or lost.
 
@@ -97,7 +97,7 @@ The Windows jobs run the unit tests, build the Release VSIX, and exercise real r
 
 To publish a GitHub Release, update the version in `src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj` and `src/GitSvnShuttle.Vsix/source.extension.vsixmanifest`, update `RELEASE_NOTES.txt`, and push a matching tag such as `v0.4.2`. The tag, project version, and manifest version must match. After all checks pass, the workflow creates a release with generated notes and attaches the tested VSIX. Creating the release requires no additional secret; it uses GitHub's workflow token.
 
-Marketplace publication remains manual. A normal code push or a manual CI run does not publish a release.
+To publish to Visual Studio Marketplace, add the publisher's Azure DevOps PAT as the repository Actions secret `VS_MARKETPLACE_TOKEN`, with **Marketplace (Publish)** permission. Run **CI** manually with `marketplace_mode: validate` to check the tested VSIX identity/version against the existing public listing, then use `marketplace_mode: publish` to upload that run's tested VSIX after both Windows jobs pass. The publisher must have access to `semisemil`; token values belong only in GitHub's secret settings. Publication verifies that the new version appears in the public Marketplace query. Keep the default `skip` for ordinary development; pushes, PRs, and version tags do not automatically publish to Marketplace.
 
 ## Code structure
 
