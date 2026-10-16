@@ -95,6 +95,11 @@ jobs:
         run: ./test-env/setup.ps1 -WorkspaceRoot "$env:RUNNER_TEMP/ShuttleTest"
       - name: Verify rebase and dcommit
         run: ./test-env/smoke.ps1 -WorkspaceRoot "$env:RUNNER_TEMP/ShuttleTest"
+      - name: Verify tracking migration and remote branches
+        run: |
+          $settings = Get-Content "$env:RUNNER_TEMP/ShuttleTest/test-environment.json" -Raw | ConvertFrom-Json
+          dotnet run --project tests/GitSvnShuttle.TrackingProbe/GitSvnShuttle.TrackingProbe.csproj -c Release -- $settings.git $settings.svn $settings.svnadmin "$env:RUNNER_TEMP/ShuttleTrackingTest"
+          if ($LASTEXITCODE -ne 0) { throw 'Tracking migration and remote branch integration failed.' }
       - name: Stop local SVN server
         if: always()
         run: ./test-env/stop.ps1 -WorkspaceRoot "$env:RUNNER_TEMP/ShuttleTest"

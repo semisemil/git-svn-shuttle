@@ -11,8 +11,11 @@ public sealed class GitSvnWorkspaceService
     private readonly GitSvnRepositoryDiscovery discovery;
     private readonly GitSvnRebaseWorkflow rebase;
     private readonly GitSvnPublishWorkflow publish;
+    private readonly GitSvnTrackingWorkflow tracking;
+    private readonly GitSvnTargetResolver targetResolver;
+    private readonly GitSvnBranchWorkflow branchWorkflow;
 
-    public GitSvnWorkspaceService(IGitCommandRunner runner)
+    public GitSvnWorkspaceService(IGitCommandRunner runner, ISvnCommandRunner? svnRunner = null)
     {
         if (runner == null)
         {
@@ -23,7 +26,22 @@ public sealed class GitSvnWorkspaceService
         discovery = new GitSvnRepositoryDiscovery(runner, reader);
         rebase = new GitSvnRebaseWorkflow(runner, reader);
         publish = new GitSvnPublishWorkflow(runner, new GitSvnPublishValidator(runner, reader));
+        tracking = new GitSvnTrackingWorkflow(runner);
+        targetResolver = new GitSvnTargetResolver(runner);
+        branchWorkflow = new GitSvnBranchWorkflow(runner, svnRunner ?? new ProcessSvnCommandRunner(), reader);
     }
+
+    public Task<GitSvnTrackingPaths> GetTrackingPathsAsync(string repositoryPath, CancellationToken cancellationToken) =>
+        tracking.GetAsync(repositoryPath, cancellationToken);
+
+    public Task<OperationResult> ConfigureTrackingPathsAsync(string repositoryPath, GitSvnTrackingPaths paths,
+        CancellationToken cancellationToken) => tracking.ConfigureAsync(repositoryPath, paths, cancellationToken);
+
+    public Task<GitSvnDcommitTarget> ResolveDcommitTargetAsync(string repositoryPath, CancellationToken cancellationToken) =>
+        targetResolver.ResolveAsync(repositoryPath, cancellationToken);
+
+    public Task<OperationResult> CreateSvnBranchAsync(string repositoryPath, GitSvnBranchRequest request,
+        CancellationToken cancellationToken) => branchWorkflow.CreateAsync(repositoryPath, request, cancellationToken);
 
     public Task<IReadOnlyList<GitSvnRepository>> DiscoverAsync(
         string solutionDirectory,

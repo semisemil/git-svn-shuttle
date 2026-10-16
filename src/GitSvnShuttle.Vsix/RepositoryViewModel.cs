@@ -26,7 +26,8 @@ internal sealed class RepositoryViewModel : INotifyPropertyChanged
         Action<bool> expansionChanged,
         bool initiallySelected,
         bool initiallyExpanded,
-        RepositoryOperationOutcome? initialOperationOutcome)
+        RepositoryOperationOutcome? initialOperationOutcome,
+        Func<Task> manageSvn)
     {
         this.selectionChanged = selectionChanged ?? throw new ArgumentNullException(nameof(selectionChanged));
         this.expansionChanged = expansionChanged ?? throw new ArgumentNullException(nameof(expansionChanged));
@@ -51,6 +52,7 @@ internal sealed class RepositoryViewModel : INotifyPropertyChanged
             continueRebase,
             () => repository.IsRebaseInProgress && repository.CanContinueRebase);
         AbortRebaseCommand = new AsyncCommand(abortRebase, () => repository.IsRebaseInProgress);
+        ManageSvnCommand = new AsyncCommand(manageSvn);
     }
 
     public string Name { get; }
@@ -186,6 +188,7 @@ internal sealed class RepositoryViewModel : INotifyPropertyChanged
     public AsyncCommand DcommitCommand { get; }
     public AsyncCommand ContinueRebaseCommand { get; }
     public AsyncCommand AbortRebaseCommand { get; }
+    public AsyncCommand ManageSvnCommand { get; }
 
     public void ApplyOperationOutcome(RepositoryOperationOutcome? outcome)
     {

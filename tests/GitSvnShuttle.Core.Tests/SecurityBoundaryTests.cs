@@ -85,6 +85,17 @@ public sealed class SecurityBoundaryTests
                         return Success("svn-remote.svn.url https://svn.example.test/demo/trunk");
                     }
 
+                    if (arguments == "svn info")
+                    {
+                        return Success("URL: https://svn.example.test/demo/trunk\nRevision: 42");
+                    }
+
+                    if (arguments == "config --get-regexp ^(svn\\.|svn-remote\\.)")
+                    {
+                        return Success("svn-remote.svn.url https://svn.example.test/demo/trunk\n" +
+                            "svn-remote.svn.fetch :refs/remotes/git-svn");
+                    }
+
                     if (arguments == "--no-optional-locks status --porcelain=v1 --untracked-files=no")
                     {
                         return Success(string.Empty);
@@ -95,7 +106,7 @@ public sealed class SecurityBoundaryTests
                         return Success(Path.Combine(externalRoot, ".git"));
                     }
 
-                    if (arguments == "log --grep=git-svn-id: --format=%H -1")
+                    if (arguments == "log --first-parent --grep=git-svn-id: --format=%H -1")
                     {
                         return Success("baseline");
                     }

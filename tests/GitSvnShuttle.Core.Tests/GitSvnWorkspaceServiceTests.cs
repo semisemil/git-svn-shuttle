@@ -17,6 +17,10 @@ public sealed class GitSvnWorkspaceServiceTests
         runner.Enqueue(output:
             "def456\u001fdef456\u001fKim\u001f2026-08-07\u001fFix shuttle" + Environment.NewLine +
             "new789\u001fnew789\u001fKim\u001f2026-08-08\u001fPolish shuttle");
+        runner.Enqueue(output: "URL: https://svn.example.test/demo/trunk\nRevision: 42");
+        runner.Enqueue(output:
+            "svn-remote.svn.url https://svn.example.test/demo/trunk\n" +
+            "svn-remote.svn.fetch :refs/remotes/git-svn");
         var service = new GitSvnWorkspaceService(runner);
 
         var result = await service.InspectAsync("C:\\work\\main", CancellationToken.None);
@@ -31,8 +35,8 @@ public sealed class GitSvnWorkspaceServiceTests
         Assert.Equal("Kim", result.PendingCommits[0].Author);
         Assert.Equal("2026-08-07", result.PendingCommits[0].Date);
         Assert.Equal("Polish shuttle", result.PendingCommits[1].Subject);
-        Assert.Contains("abc123..HEAD", runner.Calls.Last().Arguments);
-        Assert.Contains("--reverse", runner.Calls.Last().Arguments);
+        Assert.Contains(runner.Calls, call => call.Arguments.Contains("abc123..HEAD") && call.Arguments.Contains("--reverse"));
+        Assert.Equal(new[] { "https://svn.example.test/demo/trunk" }, result.SvnTargets);
     }
 
     [Fact]
@@ -80,6 +84,33 @@ public sealed class GitSvnWorkspaceServiceTests
 
         Assert.False(result.Succeeded);
         Assert.Contains("SVN 설정이 변경", result.Message);
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
+    }
+
+    [Fact]
+    public async Task DcommitPreparedAsync_RejectsChangedActualTargetWithIdenticalHeadAndConfiguration()
+    {
+        const string repository = "/work/project";
+        var target = "https://svn.example.test/project/branches/first";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string> { [repository] = "same-head" });
+        var responder = runner.Responder!;
+        runner.Responder = (path, arguments) => arguments switch
+        {
+            "svn info" => Success("URL: " + target + "\nRevision: 42"),
+            "config --get-regexp ^(svn\\.|svn-remote\\.)" => Success(
+                "svn-remote.svn.url https://svn.example.test/project\n" +
+                "svn-remote.svn.branches branches/*:refs/remotes/svn/*"),
+            _ => responder(path, arguments),
+        };
+        var service = new GitSvnWorkspaceService(runner);
+        var preparation = await service.PrepareDcommitAsync(repository, CancellationToken.None);
+        Assert.True(preparation.Succeeded);
+        Assert.Equal(new[] { target }, preparation.Snapshot!.SvnTargets);
+
+        target = "https://svn.example.test/project/branches/second";
+        var result = await service.DcommitPreparedAsync(preparation.Snapshot, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
         Assert.DoesNotContain(runner.Calls, IsActualDcommit);
     }
 
@@ -701,7 +732,7 @@ public sealed class GitSvnWorkspaceServiceTests
         var responder = runner.Responder!;
         runner.Responder = (repository, arguments) => (change, arguments) switch
         {
-            ("baseline", "log --grep=git-svn-id: --format=%H -1") => Success("changed-baseline"),
+            ("baseline", "log --first-parent --grep=git-svn-id: --format=%H -1") => Success("changed-baseline"),
             ("merge", "log --merges --format=%H base..HEAD") => Success("merge-commit"),
             ("branch", "symbolic-ref --quiet --short HEAD") => new GitCommandResult(1, "", "detached"),
             _ => responder(repository, arguments),
@@ -801,7 +832,8 @@ public sealed class GitSvnWorkspaceServiceTests
         Assert.True(confirmation.IsPublishConfirmationOpen);
         Assert.Equal(new[] { "old", "new" }, confirmation.PendingPublishItems.Select(item => item.ShortHash));
         Assert.Same(preparation.Snapshot, Assert.Single(confirmation.TakeSnapshots()));
-        Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal));
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal) &&
+            call.Arguments != "svn info");
     }
 
     [Theory]
@@ -829,7 +861,7 @@ public sealed class GitSvnWorkspaceServiceTests
             ("commits", _) when arguments.StartsWith("log --date=short ", StringComparison.Ordinal) =>
                 Success("changed\u001fchanged\u001fKim\u001f2026-09-05\u001fDifferent commit"),
             ("config", "config --get-regexp ^(svn\\.|svn-remote\\.)") => Success("svn-remote.svn.url https://svn.test/other"),
-            ("baseline", "log --grep=git-svn-id: --format=%H -1") => Success("changed-base"),
+            ("baseline", "log --first-parent --grep=git-svn-id: --format=%H -1") => Success("changed-base"),
             ("dirty", "--no-optional-locks status --porcelain=v1 --untracked-files=no") => Success(" M file.cs"),
             ("status-failed", "--no-optional-locks status --porcelain=v1 --untracked-files=no") => new GitCommandResult(1, "", "unreadable"),
             ("missing-git-directory", "rev-parse --git-dir") => Success(""),
@@ -837,7 +869,8 @@ public sealed class GitSvnWorkspaceServiceTests
         };
 
         Assert.False(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotAsync, CancellationToken.None));
-        Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal));
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal) &&
+            call.Arguments != "svn info");
     }
 
     [Fact]
@@ -876,7 +909,7 @@ public sealed class GitSvnWorkspaceServiceTests
                 return Success(head);
             }
 
-            if (arguments == "log --grep=git-svn-id: --format=%H -1")
+            if (arguments == "log --first-parent --grep=git-svn-id: --format=%H -1")
             {
                 return Success("base");
             }
@@ -888,7 +921,12 @@ public sealed class GitSvnWorkspaceServiceTests
 
             if (arguments == "config --get-regexp ^(svn\\.|svn-remote\\.)")
             {
-                return Success("svn-remote.svn.url " + target);
+                return Success("svn-remote.svn.url " + target + "\nsvn-remote.svn.fetch :refs/remotes/git-svn");
+            }
+
+            if (arguments == "svn info")
+            {
+                return Success("URL: " + target + "\nRevision: 42");
             }
 
             if (arguments == "rev-parse --git-dir")

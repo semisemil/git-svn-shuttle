@@ -127,8 +127,8 @@ internal sealed class GitSvnPublishValidator
             return null;
         }
 
-        var svnTargets = SvnConfiguration.ExtractSvnTargets(configResult.StandardOutput);
-        if (svnTargets.Count == 0)
+        var target = await new GitSvnTargetResolver(runner).ResolveAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (!target.IsResolved)
         {
             return null;
         }
@@ -141,7 +141,7 @@ internal sealed class GitSvnPublishValidator
             baseline,
             commits,
             SvnConfiguration.ComputeFingerprint(configResult.StandardOutput),
-            svnTargets);
+            new[] { target.Url! });
     }
 
     private static bool PublishSnapshotsMatch(GitSvnPublishSnapshot expected, GitSvnPublishSnapshot current) =>
@@ -152,6 +152,7 @@ internal sealed class GitSvnPublishValidator
             expected.SvnConfigurationFingerprint,
             current.SvnConfigurationFingerprint,
             StringComparison.Ordinal) &&
+        expected.SvnTargets.SequenceEqual(current.SvnTargets, StringComparer.Ordinal) &&
         expected.PendingCommits.Select(commit => commit.Hash).SequenceEqual(
             current.PendingCommits.Select(commit => commit.Hash),
             StringComparer.OrdinalIgnoreCase);
