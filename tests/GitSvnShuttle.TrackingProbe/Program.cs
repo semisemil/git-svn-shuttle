@@ -237,11 +237,12 @@ async Task RequireTargetAsync(string repository, string expected)
 async Task<string> FindImportedRefAsync(string repository, string url)
 {
     var refs = (await GitAsync(repository, "for-each-ref", "--format=%(refname)", "refs/remotes"))
-        .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
     foreach (var reference in refs)
     {
         var message = await GitAsync(repository, "show", "-s", "--format=%B", reference);
-        var marker = message.Split('\n').FirstOrDefault(line => line.StartsWith("git-svn-id: ", StringComparison.Ordinal));
+        var marker = message.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line => line.StartsWith("git-svn-id: ", StringComparison.Ordinal));
         if (marker != null && UrlEquals(marker.Substring("git-svn-id: ".Length).Split('@')[0], url)) return reference;
     }
     throw new InvalidOperationException("No imported SVN ref for " + url);
