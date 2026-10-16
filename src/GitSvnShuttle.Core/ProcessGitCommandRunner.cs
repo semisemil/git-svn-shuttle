@@ -14,11 +14,18 @@ public sealed class ProcessGitCommandRunner : IGitCommandRunner
     private static readonly TimeSpan ReadCommandTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan SvnCommandTimeout = TimeSpan.FromMinutes(30);
     private readonly string gitExecutablePath;
+    private readonly TimeSpan? timeoutOverride;
     private static readonly Encoding GitOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     public ProcessGitCommandRunner(string gitExecutablePath)
     {
         this.gitExecutablePath = GitExecutableResolver.ResolveExecutablePath(gitExecutablePath);
+    }
+
+    internal ProcessGitCommandRunner(string executablePath, TimeSpan timeout)
+        : this(executablePath)
+    {
+        timeoutOverride = timeout;
     }
 
     public async Task<GitCommandResult> RunAsync(
@@ -53,7 +60,7 @@ public sealed class ProcessGitCommandRunner : IGitCommandRunner
             startInfo.EnvironmentVariables["GIT_EDITOR"] = "true";
         }
 
-        using (var timeoutSource = new CancellationTokenSource(GetTimeout(arguments)))
+        using (var timeoutSource = new CancellationTokenSource(timeoutOverride ?? GetTimeout(arguments)))
         using (var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
                    cancellationToken,
                    timeoutSource.Token))

@@ -85,6 +85,7 @@ internal sealed class GitRepositoryReader
         var problem = string.IsNullOrWhiteSpace(status.StandardOutput)
             ? null
             : "커밋되지 않은 변경이 있습니다.";
+        var target = await new GitSvnTargetResolver(runner).ResolveAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
 
         return new GitSvnRepository(
             GetRepositoryName(repositoryPath),
@@ -92,7 +93,8 @@ internal sealed class GitRepositoryReader
             gitDirectory,
             baseline,
             commits,
-            problem);
+            problem,
+            svnTargets: target.IsResolved ? new[] { target.Url! } : Array.Empty<string>());
     }
 
     internal async Task<OperationResult> PreflightAsync(
@@ -216,7 +218,7 @@ internal sealed class GitRepositoryReader
     {
         var result = await runner.RunAsync(
             repositoryPath,
-            new[] { "log", "--grep=git-svn-id:", "--format=%H", "-1" },
+            new[] { "log", "--first-parent", "--grep=git-svn-id:", "--format=%H", "-1" },
             cancellationToken).ConfigureAwait(false);
         return FirstOutputLine(result);
     }

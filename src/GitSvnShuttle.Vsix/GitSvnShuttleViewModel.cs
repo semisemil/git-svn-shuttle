@@ -22,7 +22,7 @@ internal enum RepositoryRefreshReason
     ContextReset,
 }
 
-internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposable
+internal sealed partial class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly GitSvnShuttlePackage package;
     private readonly GitSvnRuntimeDetector runtimeDetector;
@@ -73,6 +73,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         CancelPublishCommand = new AsyncCommand(CancelPublishAsync, () => IsPublishConfirmationOpen && !IsBusy);
         CancelOperationCommand = new AsyncCommand(CancelOperationAsync, () => IsBusy && operationCancellation != null);
         ShowLogCommand = new AsyncCommand(ShowLogAsync);
+        InitializeSvnManagementCommands();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -450,7 +451,8 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
                         repository.PendingCommits.Count > 0),
                     repositoryState.IsSelected(repository.Path),
                     repositoryState.IsExpanded(repository.Path),
-                    repositoryState.GetOutcome(repository.Path)));
+                    repositoryState.GetOutcome(repository.Path),
+                    () => OpenSvnManagementAsync(repository.Path)));
             }
 
             changeMonitor.Configure(solutionDirectory, repositories);
@@ -837,6 +839,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
     private void ResetRepositorySession()
     {
         ClosePublishConfirmation();
+        CloseSvnManagement();
         repositoryState.Reset();
         currentSolutionDirectory = string.Empty;
         foreach (var repository in Repositories)
@@ -929,6 +932,7 @@ internal sealed class GitSvnShuttleViewModel : INotifyPropertyChanged, IDisposab
         ConfirmPublishCommand.RaiseCanExecuteChanged();
         CancelPublishCommand.RaiseCanExecuteChanged();
         CancelOperationCommand.RaiseCanExecuteChanged();
+        RefreshSvnManagementCommands();
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? name = null)

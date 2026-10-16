@@ -58,6 +58,13 @@
     </Style>
     <Style x:Key="MutedText" TargetType="TextBlock"><Setter Property="FontSize" Value="10.5"/><Setter Property="Opacity" Value="0.68"/></Style>
     <Style x:Key="ColumnHeader" TargetType="TextBlock"><Setter Property="FontSize" Value="10"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Opacity" Value="0.66"/><Setter Property="VerticalAlignment" Value="Center"/></Style>
+    <Style x:Key="SvnInput" TargetType="TextBox">
+      <Setter Property="MinHeight" Value="26"/><Setter Property="Padding" Value="5,3"/>
+      <Setter Property="Foreground" Value="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"/>
+      <Setter Property="Background" Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBackgroundKey}}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBorderKey}}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
   </UserControl.Resources>
 
   <Grid>
@@ -65,6 +72,7 @@
     <Border Grid.Row="0" Height="40" Padding="10,0" Background="{DynamicResource {x:Static shell:VsBrushes.CommandBarGradientKey}}" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.CommandBarBorderKey}}" BorderThickness="0,0,0,1">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Style="{StaticResource IconButton}" Command="{Binding NewSvnConnectionCommand}" ToolTip="로컬 저장소에 SVN 추적 경로 연결" AutomationProperties.Name="SVN 저장소 새 연결" Margin="0,0,2,0"><Path Data="{StaticResource RepositoryGeometry}" Stretch="Uniform" StrokeThickness="1.5" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
           <Button Style="{StaticResource TextButton}" MinHeight="26" Padding="8,2" Content="로그 보기" Command="{Binding ShowLogCommand}" ToolTip="Visual Studio 출력 창에서 Git-SVN Shuttle 로그 보기" AutomationProperties.Name="Git-SVN Shuttle 로그 보기" Margin="0,0,6,0"/>
           <Button Style="{StaticResource IconButton}" Command="{Binding ToggleRuntimeSettingsCommand}" ToolTip="Git-SVN 실행 환경 설정" AutomationProperties.Name="Git-SVN 실행 환경 설정" Margin="0,0,2,0"><Path Data="{StaticResource SettingsGeometry}" Stretch="Uniform" StrokeThickness="1.5" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
           <Button Style="{StaticResource IconButton}" Command="{Binding RefreshCommand}" ToolTip="저장소 상태 새로 고침" AutomationProperties.Name="저장소 상태 새로 고침" Margin="0,0,2,0"><Path Data="{StaticResource RefreshGeometry}" Stretch="Uniform" StrokeThickness="1.7" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
@@ -121,6 +129,7 @@
               <Border BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,0,0,1" SnapsToDevicePixels="True">
                 <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="Transparent"/><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Background" Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxMouseOverBackgroundBeginKey}}"/></DataTrigger></Style.Triggers></Style></Border.Style>
                 <StackPanel>
+                  <Button Style="{StaticResource TextButton}" Content="SVN 경로 · 브랜치" Command="{Binding ManageSvnCommand}" HorizontalAlignment="Right" MinHeight="24" Padding="8,2" Margin="8,4,10,0" ToolTip="추적 경로 편집, SVN 원격 브랜치 생성, 실제 dcommit 대상 조회" AutomationProperties.Name="저장소 SVN 경로와 브랜치 관리"/>
                   <!-- Wide: a flat, dense table row. -->
                   <Grid MinHeight="54" Margin="8,0" MouseLeftButtonUp="OnRepositorySummaryMouseLeftButtonUp">
                     <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsCompactLayout, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Grid.Style>
@@ -184,6 +193,72 @@
             <Border Margin="0,10,0,0" Padding="9,7" Background="{DynamicResource {x:Static shell:VsBrushes.InfoBackgroundKey}}"><TextBlock Text="저장소별 게시 작업은 하나의 트랜잭션이 아닙니다. 앞 저장소가 성공한 뒤 다음 저장소가 실패할 수 있습니다." TextWrapping="Wrap" FontSize="10.5" Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}"/></Border>
           </StackPanel>
           <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,14,16,16"><Button Style="{StaticResource TextButton}" Content="취소" Command="{Binding CancelPublishCommand}" Margin="0,0,6,0"/><Button Style="{StaticResource PrimaryTextButton}" Content="게시 시작" Command="{Binding ConfirmPublishCommand}"/></StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Grid Grid.RowSpan="4" Visibility="{Binding SvnManagementVisibility, FallbackValue=Collapsed, TargetNullValue=Collapsed}" Background="#99000000">
+      <Border MinWidth="360" MaxWidth="640" Margin="16" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBackgroundKey}}" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="1">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Border Padding="14,12" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,0,0,1"><TextBlock Text="SVN 경로와 브랜치" FontSize="16" FontWeight="SemiBold"/></Border>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="14,10">
+              <StackPanel IsEnabled="{Binding CanEditSvnManagement}">
+                <TextBlock Text="로컬 저장소 폴더" Margin="0,0,0,3"/>
+                <TextBox Style="{StaticResource SvnInput}" Text="{Binding ManagementRepositoryPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="로컬 저장소 폴더"/>
+                <Button Style="{StaticResource TextButton}" Content="기존 추적 경로 조회" Command="{Binding LoadTrackingPathsCommand}" HorizontalAlignment="Left" Margin="0,6,0,12"/>
+                <TextBlock Text="현재 로컬 브랜치의 실제 dcommit 대상 (조회 시점)" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding ActualDcommitTarget}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,4" AutomationProperties.Name="실제 dcommit 대상"/>
+                <Button Style="{StaticResource TextButton}" Content="전송 대상 다시 조회" Command="{Binding RefreshDcommitTargetCommand}" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+                <TabControl Background="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBackgroundKey}}" Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}">
+                  <TabItem Header="추적 경로">
+                    <StackPanel Margin="8,10">
+                      <TextBlock Text="SVN 기준 URL" Margin="0,0,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding TrackingBaseUrl, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 기준 URL"/>
+                      <TextBlock Text="모든 경로는 기준 URL에 상대적으로 입력하세요. 기준 URL 자체는 '.'으로 지정합니다. 경로를 한 줄씩 추가하면 기존 배치와 새 배치를 함께 추적합니다." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,6,0,10"/>
+                      <TextBlock Text="trunk 경로" Margin="0,0,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding TrunkPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="trunk 추적 경로, 한 줄에 하나"/>
+                      <TextBlock Text="branches 경로 (중간 폴더 또는 * 패턴)" Margin="0,8,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding BranchesPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="branches 추적 경로, 한 줄에 하나"/>
+                      <TextBlock Text="tags 경로 (배포본)" Margin="0,8,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding TagsPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="tags 추적 경로, 한 줄에 하나"/>
+                      <TextBlock Text="추적 경로 적용은 fetch까지 수행합니다. 기존 로컬 커밋, 스테이징 상태와 미커밋 변경을 보존하며 기존 이력의 전송 연결도 유지합니다." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,10,0,8"/>
+                      <TextBlock Text="기존 로컬 브랜치의 전송 대상은 자동 변경하지 않습니다. 새 경로에서 작업하려면 해당 SVN 이력에 연결된 로컬 브랜치를 사용하세요. 새 연결은 작업 파일을 checkout하지 않습니다." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,8"/>
+                      <TextBlock Text="보존된 이력·작업 브랜치 연결 (읽기 전용)" FontSize="10.5" FontWeight="SemiBold"/>
+                      <TextBlock Text="{Binding RetainedTrackingPathsText}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Margin="0,4,0,10"/>
+                      <Button Style="{StaticResource PrimaryTextButton}" Content="추적 경로 적용 및 fetch" Command="{Binding SaveTrackingPathsCommand}" HorizontalAlignment="Right"/>
+                    </StackPanel>
+                  </TabItem>
+                  <TabItem Header="SVN 브랜치 생성">
+                    <StackPanel Margin="8,10">
+                      <TextBlock Text="상대 경로는 추적 경로 탭에 표시된 SVN 기준 URL을 사용합니다. 기준 URL 자체는 '.'으로 지정하세요." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,8"/>
+                      <TextBlock Text="기준 SVN 경로 (URL 또는 기준 URL 상대 경로)" Margin="0,0,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding BranchSourcePath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="브랜치 기준 SVN 경로"/>
+                      <TextBlock Text="기준 리비전 (HEAD 또는 숫자)" Margin="0,8,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding BranchRevision, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="브랜치 기준 SVN 리비전"/>
+                      <TextBlock Text="생성 위치 (상위 폴더 URL 또는 상대 경로)" Margin="0,8,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding BranchDestinationPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 브랜치 생성 위치"/>
+                      <TextBlock Text="SVN 브랜치 이름" Margin="0,8,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding SvnBranchName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 브랜치 이름"/>
+                      <TextBlock Text="SVN 브랜치 생성 커밋 메시지" Margin="0,8,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" Text="{Binding BranchCommitMessage, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 브랜치 생성 커밋 메시지"/>
+                      <TextBlock Text="연결할 로컬 Git 브랜치 이름" Margin="0,8,0,3"/>
+                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding LocalBranchName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="연결할 로컬 Git 브랜치 이름"/>
+                      <CheckBox Content="생성 후 연결된 로컬 브랜치로 전환" IsChecked="{Binding SwitchToCreatedBranch}" Margin="0,10,0,6"/>
+                      <TextBlock Text="SVN 서버에 브랜치를 만든 뒤 fetch하고 로컬 브랜치를 연결합니다. 서버 생성 이후 작업이 실패하면 결과 메시지를 확인하세요." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,8"/>
+                      <Button Style="{StaticResource PrimaryTextButton}" Content="SVN 브랜치 생성 및 로컬 연결" Command="{Binding CreateSvnBranchCommand}" HorizontalAlignment="Right"/>
+                    </StackPanel>
+                  </TabItem>
+                </TabControl>
+              </StackPanel>
+              <TextBlock Text="{Binding ManagementStatus}" TextWrapping="Wrap" FontSize="11" Margin="0,10,0,0"/>
+            </StackPanel>
+          </ScrollViewer>
+          <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="14,10">
+            <Button Style="{StaticResource TextButton}" Content="작업 취소" Command="{Binding CancelOperationCommand}" Visibility="{Binding CancelOperationVisibility}" Margin="0,0,6,0"/>
+            <Button Style="{StaticResource TextButton}" Content="닫기" Command="{Binding CloseSvnManagementCommand}"/>
+          </StackPanel>
         </Grid>
       </Border>
     </Grid>

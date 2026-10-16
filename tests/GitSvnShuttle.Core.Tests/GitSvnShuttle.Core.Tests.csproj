@@ -19,5 +19,6 @@
     <Compile Include="..\..\src\GitSvnShuttle.Vsix\OperationPresentation.cs" Link="Presentation\OperationPresentation.cs" />
     <Compile Include="..\..\src\GitSvnShuttle.Vsix\PublishConfirmationViewModel.cs" Link="Presentation\PublishConfirmationViewModel.cs" />
     <Compile Include="..\..\src\GitSvnShuttle.Vsix\PublishCommitViewModel.cs" Link="Presentation\PublishCommitViewModel.cs" />
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\SvnManagementInput.cs" Link="Presentation\SvnManagementInput.cs" />
   </ItemGroup>
 </Project>

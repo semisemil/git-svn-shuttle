@@ -79,8 +79,7 @@ internal sealed class GitSvnRepositoryDiscovery
             var inspected = await reader.InspectAsync(candidate.Path, cancellationToken).ConfigureAwait(false);
             repositories.Add(WithDiscoveryContext(
                 inspected,
-                candidate,
-                SvnConfiguration.ExtractSvnTargets(config.StandardOutput)));
+                candidate));
         }
 
         return repositories;
@@ -289,8 +288,7 @@ internal sealed class GitSvnRepositoryDiscovery
 
     private static GitSvnRepository WithDiscoveryContext(
         GitSvnRepository repository,
-        RepositoryCandidate candidate,
-        IReadOnlyList<string> svnTargets) =>
+        RepositoryCandidate candidate) =>
         new GitSvnRepository(
             repository.Name,
             repository.Path,
@@ -303,7 +301,7 @@ internal sealed class GitSvnRepositoryDiscovery
             repository.CanContinueRebase,
             candidate.IsExternalLink,
             candidate.LinkedProjectPath,
-            svnTargets);
+            repository.SvnTargets);
 
     private sealed class RepositoryCandidate
     {

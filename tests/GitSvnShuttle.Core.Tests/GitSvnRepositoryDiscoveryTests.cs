@@ -105,11 +105,14 @@ public sealed class GitSvnRepositoryDiscoveryTests : IDisposable
         Responder = (repository, arguments) => arguments switch
         {
             ConfigCommand => hasSvn
-                ? Success("svn-remote.svn.url https://svn.example.test/trunk")
+                ? Success("svn-remote.svn.url https://svn.example.test\nsvn-remote.svn.fetch trunk:refs/remotes/git-svn")
                 : new GitCommandResult(1, string.Empty, string.Empty),
             "--no-optional-locks status --porcelain=v1 --untracked-files=no" => Success(string.Empty),
             "rev-parse --git-dir" => Success(Path.Combine(repository, ".git")),
-            "log --grep=git-svn-id: --format=%H -1" => Success("baseline"),
+            "log --first-parent --grep=git-svn-id: --format=%H -1" => Success("baseline"),
+            "svn info" => Success("URL: https://svn.example.test/trunk\nRevision: 42"),
+            "config --get-regexp ^(svn\\.|svn-remote\\.)" =>
+                Success("svn-remote.svn.url https://svn.example.test\nsvn-remote.svn.fetch trunk:refs/remotes/git-svn"),
             _ when arguments.StartsWith("show -s ", StringComparison.Ordinal) =>
                 Success("baseline\u001fbase\u001fSVN\u001f2026-09-17\u001fBaseline"),
             _ when arguments.StartsWith("log --date=short ", StringComparison.Ordinal) => Success(string.Empty),

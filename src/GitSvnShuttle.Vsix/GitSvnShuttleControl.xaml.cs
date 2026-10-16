@@ -101,6 +101,11 @@ public partial class GitSvnShuttleControl : UserControl, System.IDisposable
             viewModel.CancelPublishCommand.Execute(null!);
             e.Handled = true;
         }
+        else if (viewModel.CloseSvnManagementCommand.CanExecute(null!))
+        {
+            viewModel.CloseSvnManagementCommand.Execute(null!);
+            e.Handled = true;
+        }
     }
 
     private void OnSizeChanged(object sender, System.Windows.SizeChangedEventArgs e) =>
