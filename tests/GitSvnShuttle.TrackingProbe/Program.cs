@@ -213,6 +213,9 @@ async Task<Fixture> SeedAsync(string name, string trunk, string branches, string
     Directory.CreateDirectory(local);
     // Set identity only inside this disposable Git repository.
     await GitAsync(local, "init");
+    // Assertions compare exact file bytes across stash/checkout, independently
+    // of the host Git installation's global newline conversion defaults.
+    await GitAsync(local, "config", "core.autocrlf", "false");
     await GitAsync(local, "config", "user.name", "Tracking Probe");
     await GitAsync(local, "config", "user.email", "tracking-probe@example.invalid");
     return new Fixture(root, local, url, Path.Combine(root, "svn-working-copy"));
