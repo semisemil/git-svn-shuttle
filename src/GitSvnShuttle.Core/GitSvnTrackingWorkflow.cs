@@ -173,7 +173,9 @@ internal sealed class GitSvnTrackingWorkflow
         return result.StandardOutput.Split('\0').Where(s => s.Contains("\n")).Select(s =>
         {
             var split = s.IndexOf('\n');
-            return new Entry(s.Substring(0, split), s.Substring(split + 1));
+            // The process runner reconstructs line endings using the host's newline.
+            var keyLength = split > 0 && s[split - 1] == '\r' ? split - 1 : split;
+            return new Entry(s.Substring(0, keyLength), s.Substring(split + 1));
         }).ToList();
     }
 

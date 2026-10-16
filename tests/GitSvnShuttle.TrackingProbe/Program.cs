@@ -3,9 +3,9 @@ using GitSvnShuttle.Core;
 
 // This probe writes only to its disposable fixture root. It needs real git-svn,
 // svn and svnadmin; it never connects to an existing SVN repository.
-if (args.Length > 4)
+if (args.Length > 5)
 {
-    Console.Error.WriteLine("Usage: GitSvnShuttle.TrackingProbe [git] [svn] [svnadmin] [fixture-root]");
+    Console.Error.WriteLine("Usage: GitSvnShuttle.TrackingProbe [git] [svn] [svnadmin] [fixture-root] [loopback-fixture-url]");
     return 2;
 }
 
@@ -13,6 +13,13 @@ var git = args.ElementAtOrDefault(0) ?? "git";
 var svn = args.ElementAtOrDefault(1) ?? "svn";
 var svnadmin = args.ElementAtOrDefault(2) ?? "svnadmin";
 var fixtureRoot = Path.GetFullPath(args.ElementAtOrDefault(3) ?? Path.Combine(Path.GetTempPath(), "shuttle-tracking-" + Guid.NewGuid().ToString("N")));
+var fixtureUrl = args.ElementAtOrDefault(4)?.TrimEnd('/');
+if (fixtureUrl != null)
+{
+    Require(Uri.TryCreate(fixtureUrl, UriKind.Absolute, out var endpoint) && endpoint.Scheme == "svn" && endpoint.IsLoopback &&
+        endpoint.UserInfo.Length == 0 && endpoint.Query.Length == 0 && endpoint.Fragment.Length == 0,
+        "The fixture URL must use svn:// on a loopback host and map to the new fixture root.");
+}
 Require(!Directory.Exists(fixtureRoot), "The fixture root must not exist: " + fixtureRoot);
 Directory.CreateDirectory(fixtureRoot);
 var runner = new ProcessGitCommandRunner(git);
@@ -189,8 +196,14 @@ async Task<Fixture> SeedAsync(string name, string trunk, string branches, string
     var root = Path.Combine(fixtureRoot, name);
     Directory.CreateDirectory(root);
     var server = Path.Combine(root, "svn-repository");
-    var url = new Uri(server + Path.DirectorySeparatorChar).AbsoluteUri.TrimEnd('/');
+    var url = fixtureUrl == null
+        ? new Uri(server + Path.DirectorySeparatorChar).AbsoluteUri.TrimEnd('/')
+        : fixtureUrl + "/" + name + "/svn-repository";
     await RunAsync(svnadmin, root, "create", server);
+    if (fixtureUrl != null)
+    {
+        File.WriteAllText(Path.Combine(server, "conf", "svnserve.conf"), "[general]\nanon-access = write\nauth-access = write\n");
+    }
     var seed = Path.Combine(root, "seed");
     foreach (var path in new[] { trunk, branches, tags }) Directory.CreateDirectory(Path.Combine(seed, path));
     foreach (var file in new[] { "staged.txt", "unstaged.txt" }) File.WriteAllText(Path.Combine(seed, trunk, file), "original\n");

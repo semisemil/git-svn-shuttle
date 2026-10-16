@@ -10,6 +10,35 @@ public sealed class GitSvnTrackingConfigurationTests : IDisposable
     private readonly string repository = Path.Combine(Path.GetTempPath(), "GitSvnShuttleTests", "tracking-" + Guid.NewGuid().ToString("N"));
     private readonly FetchInterceptRunner runner = new();
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public async Task GetTrackingPaths_ReadsConfigLineEndingsWithoutChangingPathWhitespace(string newline)
+    {
+        var retired = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "old\nfetch\n" + BaseUrl + "\ntrunk/Old:refs/remotes/old"));
+        var config = new FakeGitCommandRunner();
+        config.Enqueue(output: string.Join("\0", new[]
+        {
+            "svn-remote.svn.url" + newline + BaseUrl,
+            "svn-remote.svn.fetch" + newline + " trunk/Project :refs/remotes/svn/trunk",
+            "svn-remote.svn.branches" + newline + "branches/Project A/*:refs/remotes/svn/branches/*",
+            "svn-remote.svn.tags" + newline + "tags/Project A/*:refs/remotes/svn/tags/*",
+            "svn-remote.created.url" + newline + BaseUrl,
+            "svn-remote.created.fetch" + newline + "branches/Created:refs/remotes/created",
+            "svn-remote.created.shuttlebranch" + newline + "true",
+            "shuttle.retiredmapping" + newline + retired,
+        }) + "\0" + newline);
+
+        var paths = await new GitSvnWorkspaceService(config).GetTrackingPathsAsync(repository, CancellationToken.None);
+
+        Assert.Equal(BaseUrl, paths.BaseUrl);
+        Assert.Equal(new[] { " trunk/Project " }, paths.TrunkPaths);
+        Assert.Equal(new[] { "branches/Project A/*" }, paths.BranchesPaths);
+        Assert.Equal(new[] { "tags/Project A/*" }, paths.TagsPaths);
+        Assert.Equal(new[] { BaseUrl + "/trunk/Old", BaseUrl + "/branches/Created" }, paths.RetainedPaths);
+    }
+
     [Fact]
     public async Task Configure_PreservesProjectNameWildcardWithinBranchComponent()
     {
