@@ -3,12 +3,54 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using GitSvnShuttle.Core;
+using GitSvnShuttle.Vsix;
 
 namespace GitSvnShuttle.UiPreview;
 
 internal static class PreviewData
 {
-    public static PreviewViewModel Create() => new PreviewViewModel
+    public static PreviewViewModel Create(string? scenario = null)
+    {
+        var model = CreateWorkspace();
+        if (string.IsNullOrEmpty(scenario) || scenario == "workspace") return model;
+        model.SvnManagementVisibility = Visibility.Visible;
+        model.ManagementRepositoryPath = @"C:\work\ProjectA";
+        var paths = new GitSvnTrackingPaths("https://svn.example.test/repos/team",
+            scenario == "multiple" ? new[] { "trunk/ProjectA", "ProjectA/trunk" } : new[] { "trunk/ProjectA" },
+            scenario == "multiple" ? new[] { "branches/ProjectA/*", "ProjectA/branches/*" } : new[] { "branches/ProjectA/*" },
+            new[] { "tags/ProjectA/*" });
+        model.TrackingBaseUrl = paths.BaseUrl;
+        model.TrunkPathsText = string.Join(Environment.NewLine, paths.TrunkPaths);
+        model.BranchesPathsText = string.Join(Environment.NewLine, paths.BranchesPaths);
+        model.TagsPathsText = string.Join(Environment.NewLine, paths.TagsPaths);
+        model.BranchForm.ApplyTracking(paths, scenario == "multiple" ? null : "https://svn.example.test/repos/team/trunk/ProjectA");
+        model.BranchForm.Name = scenario == "busy" ? string.Empty : "fix-login";
+        if (scenario == "error") model.ManagementFeedback = SvnManagementFeedback.ConnectionFailure(
+            "현재 HEAD의 git-svn 추적 이력을 확인하지 못했습니다: Unable to determine upstream SVN information from working tree history");
+        if (scenario == "timeout") model.ManagementFeedback = SvnManagementFeedback.ConnectionFailure("SVN 연결 조회 시간이 20초를 초과했습니다.");
+        if (scenario == "partial") model.ManagementFeedback = SvnManagementFeedback.Failure(
+            "SVN 브랜치는 이미 생성되었습니다: https://svn.example.test/repos/team/branches/ProjectA/fix-login\nfetch 실패: SVN 인증 정보를 확인하지 못했습니다.", true);
+        if (scenario == "partial") model.BranchForm.BlockDuplicateCreation();
+        if (scenario == "busy")
+        {
+            model.BusyVisibility = Visibility.Visible;
+            model.CanEditSvnManagement = false;
+            model.ManagementProgressText = "현재 Git 브랜치의 SVN 연결을 확인하는 중입니다. 최대 20초 동안 기다립니다.";
+        }
+        if (scenario == "connection")
+        {
+            model.ManagementTabIndex = 1;
+            model.TrackingBaseUrl = string.Empty;
+            model.TrackingLayoutIndex = 0;
+            model.TrunkPathsText = "trunk";
+            model.BranchesPathsText = "branches";
+            model.TagsPathsText = "tags";
+        }
+        return model;
+    }
+
+    private static PreviewViewModel CreateWorkspace() => new PreviewViewModel
     {
         Repositories = new ObservableCollection<PreviewRepository>
         {
@@ -106,8 +148,9 @@ internal sealed class PreviewViewModel
     public Visibility RuntimePathVisibility => Visibility.Visible;
     public Visibility WorkspaceVisibility => Visibility.Visible;
     public Visibility EmptyStateVisibility => Visibility.Collapsed;
-    public Visibility BusyVisibility => Visibility.Collapsed;
-    public Visibility CancelOperationVisibility => Visibility.Collapsed;
+    public Visibility BusyVisibility { get; set; } = Visibility.Collapsed;
+    public bool IsBusy => BusyVisibility == Visibility.Visible;
+    public Visibility CancelOperationVisibility => BusyVisibility;
     public Visibility PublishConfirmationVisibility => Visibility.Collapsed;
     public string RuntimeTitle => "Git for Windows";
     public string RuntimeMessage => "Git-SVN 실행 환경 준비됨";
@@ -127,6 +170,30 @@ internal sealed class PreviewViewModel
     public ICommand CancelPublishCommand => Command;
     public ICommand CancelOperationCommand => Command;
     public ICommand ShowLogCommand => Command;
+    public Visibility SvnManagementVisibility { get; set; } = Visibility.Collapsed;
+    public Visibility ManagementFeedbackVisibility => ManagementFeedback == null ? Visibility.Collapsed : Visibility.Visible;
+    public bool CanEditSvnManagement { get; set; } = true;
+    public string ManagementRepositoryPath { get; set; } = string.Empty;
+    public SvnBranchForm BranchForm { get; } = new SvnBranchForm();
+    public SvnManagementFeedback? ManagementFeedback { get; set; }
+    public string ManagementProgressText { get; set; } = string.Empty;
+    public string ActualDcommitTarget => "현재 Git 브랜치의 SVN 연결을 확인하지 못했습니다.";
+    public string DcommitTargetGuidance => "SVN 이력에 연결된 로컬 Git 브랜치로 전환한 뒤 ‘연결 다시 확인’을 누르세요.";
+    public string DcommitTargetDetails => "Unable to determine upstream SVN information from working tree history";
+    public string RetainedTrackingPathsText => "https://svn.example.test/repos/team/ProjectA/trunk";
+    public int ManagementTabIndex { get; set; }
+    public int TrackingLayoutIndex { get; set; } = 2;
+    public bool IsTrackingAdvancedExpanded { get; set; }
+    public string TrackingBaseUrl { get; set; } = string.Empty;
+    public string TrunkPathsText { get; set; } = string.Empty;
+    public string BranchesPathsText { get; set; } = string.Empty;
+    public string TagsPathsText { get; set; } = string.Empty;
+    public ICommand NewSvnConnectionCommand => Command;
+    public ICommand CloseSvnManagementCommand => Command;
+    public ICommand LoadTrackingPathsCommand => Command;
+    public ICommand SaveTrackingPathsCommand => Command;
+    public ICommand RefreshDcommitTargetCommand => Command;
+    public ICommand CreateSvnBranchCommand => new PreviewCommand(() => CanEditSvnManagement && BranchForm.IsReady);
 }
 
 internal sealed class PreviewRepository : INotifyPropertyChanged
@@ -209,7 +276,9 @@ internal sealed class PreviewCommit
 
 internal sealed class PreviewCommand : ICommand
 {
-    public bool CanExecute(object? parameter) => true;
+    private readonly Func<bool>? canExecute;
+    public PreviewCommand(Func<bool>? canExecute = null) => this.canExecute = canExecute;
+    public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
     public void Execute(object? parameter) { }
     public event EventHandler? CanExecuteChanged { add { } remove { } }
 }

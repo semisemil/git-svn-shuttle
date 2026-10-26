@@ -24,7 +24,15 @@ The table keeps repository identity, current state, pending count, SVN destinati
 
 Uncommitted changes to tracked files, including staged additions, are shown separately in the repository header. They are not part of the dcommit list, and that repository's receive/publish buttons remain disabled until the changes are committed or discarded. Untracked files (`??` in Git status) do not block rebase or publishing and remain outside the dcommit list.
 
-Each repository's **SVN 경로 · 브랜치** button opens tracking paths, branch creation, and the actual dcommit destination. Tracking settings can be changed while local work is dirty: applying paths fetches SVN history while preserving HEAD, local commits, staging, and working files. Retired paths retain the bindings needed by existing history, so an old local work branch continues to publish to its original SVN path. Changing tracking paths does not move that branch to a new destination. See [SVN paths, branches, and layout migration](docs/svn-paths-and-branches.md) for examples and migration steps.
+Each repository's **SVN 연결 관리** button opens branch creation and connection settings.
+The branch form fills the source and destination when they can be determined and previews the resulting SVN URL and local Git branch.
+Revision, creation message, local Git name, and switching options are under **고급 설정**.
+When several configured paths are possible, select the intended source and destination.
+
+Tracking settings can be changed while local work is dirty: applying paths fetches SVN history while preserving HEAD, local commits, staging, and working files.
+Retired paths retain the bindings needed by existing history, so an old local work branch continues to publish to its original SVN path.
+Changing tracking paths does not move that branch to a new destination.
+See [SVN paths, branches, and layout migration](docs/svn-paths-and-branches.md) for examples and migration steps.
 
 If `git svn rebase` stops on conflicts, the repository shows the unresolved files separately. Resolve and stage them with Visual Studio's Git tools, then continue the rebase from Git-SVN Shuttle, or explicitly confirm that you want to abort it.
 
@@ -44,7 +52,10 @@ The root repository is processed first, followed by nested repositories in path 
 6. Use the download icon for one repository or **모두 받기** before publishing.
 7. Use an upload icon to publish one repository, or publish the selected repositories in the displayed selection order. Confirm the SVN destination and exact commits before starting. If HEAD, pending commits, the SVN baseline, or SVN configuration changes, publishing stops and requires a new confirmation.
 8. Select **로그 보기** in the tool window, or use **View > Output > Git-SVN Shuttle**, to read timestamped command results and failure details.
-9. Use **SVN 경로 · 브랜치** on a repository row to query or change tracking paths, create an SVN branch, or refresh the actual dcommit destination. The command bar's **SVN 저장소 새 연결** action also accepts an existing local folder for a new connection.
+9. Use **SVN 연결 관리** on a repository row to create a branch or open **연결 설정** for tracking paths and the actual SVN destination.
+   The command bar's **SVN 저장소 새 연결** action accepts an existing local folder for a new connection.
+   Active operations show progress and keep **작업 취소** and **닫기** available.
+   Closing the panel leaves the operation running; cancellation is a separate action.
 
 When a loaded project is linked through a directory junction, the repository card identifies it as an external link and shows the physical Git working path used for Git-SVN operations.
 
@@ -92,7 +103,7 @@ The configured runtime paths must be absolute. UI changes apply immediately; an 
 ```powershell
 dotnet restore git-svn-shuttle.sln
 dotnet test tests\GitSvnShuttle.Core.Tests\GitSvnShuttle.Core.Tests.csproj
-dotnet build src\GitSvnShuttle.Vsix\GitSvnShuttle.Vsix.csproj -c Release
+dotnet build src\GitSvnShuttle.Vsix\GitSvnShuttle.Vsix.csproj -c Release -t:Rebuild
 ```
 
 The VSIX is written below `src\GitSvnShuttle.Vsix\bin\Release`.
