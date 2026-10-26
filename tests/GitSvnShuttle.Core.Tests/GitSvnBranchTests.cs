@@ -1,4 +1,5 @@
 using GitSvnShuttle.Core;
+using GitSvnShuttle.Vsix;
 using Xunit;
 
 namespace GitSvnShuttle.Core.Tests;
@@ -7,6 +8,24 @@ public sealed class GitSvnBranchTests
 {
     private const string Root = "https://svn.example.test/repo";
     private const string Repository = "/work/project";
+
+    [Fact]
+    public async Task CreateBranch_WithOnlyANameUsesTheAutomaticallyConfiguredSourceAndLocalBranch()
+    {
+        var (service, git, svn) = Create(BranchConfiguration, Root + "/branches/project/fix");
+        var form = new SvnBranchForm();
+        form.ApplyTracking(new GitSvnTrackingPaths(Root, new[] { "trunk/project" },
+            new[] { "branches/project/*" }, Array.Empty<string>()), null);
+        form.Name = "fix";
+
+        var result = await service.CreateSvnBranchAsync(Repository, form.CreateRequest(), CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal(new[] { "copy", "--non-interactive", "--parents", "--revision", "HEAD", "--message", "브랜치 생성: fix", "--",
+            Root + "/trunk/project@HEAD", Root + "/branches/project/fix" }, Assert.Single(svn.Calls));
+        Assert.Contains(git.Calls, call => call.Arguments == "branch --no-track fix refs/remotes/selected/fix");
+        Assert.Contains(git.Calls, call => call.Arguments == "checkout fix");
+    }
 
     [Theory]
     [InlineData("project/trunk", "project/branches", "project/branches/*:refs/remotes/old/*", "refs/remotes/old/fix")]

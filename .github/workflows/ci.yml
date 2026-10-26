@@ -37,17 +37,27 @@ jobs:
         run: dotnet test tests/GitSvnShuttle.Core.Tests/GitSvnShuttle.Core.Tests.csproj -c Release --no-restore --logger trx --results-directory TestResults
       - name: Build VSIX
         run: dotnet build src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj -c Release --no-restore
-      - name: Check release version
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Check packaged version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           [xml]$project = Get-Content src/GitSvnShuttle.Vsix/GitSvnShuttle.Vsix.csproj
           [xml]$manifest = Get-Content src/GitSvnShuttle.Vsix/source.extension.vsixmanifest
           $version = [string]$project.Project.PropertyGroup.Version
-          if ($env:RELEASE_TAG -cne "v$version" -or $manifest.PackageManifest.Metadata.Identity.Version -cne $version) {
-            throw 'The release tag, project version, and VSIX manifest version must match.'
+          $package = [IO.Compression.ZipFile]::OpenRead((Resolve-Path 'src/GitSvnShuttle.Vsix/bin/Release/net472/GitSvnShuttle.Vsix.vsix'))
+          try {
+            $reader = [IO.StreamReader]::new($package.GetEntry('extension.vsixmanifest').Open())
+            try { [xml]$packagedManifest = $reader.ReadToEnd() }
+            finally { $reader.Dispose() }
           }
+          finally { $package.Dispose() }
+          if ($manifest.PackageManifest.Metadata.Identity.Version -cne $version -or $packagedManifest.PackageManifest.Metadata.Identity.Version -cne $version) {
+            throw 'The project, source manifest, and packaged VSIX versions must match.'
+          }
+          if ($env:GITHUB_REF.StartsWith('refs/tags/') -and $env:RELEASE_TAG -cne "v$version") {
+            throw 'The release tag must match the packaged VSIX version.'
+          }
+          Write-Host "Verified packaged VSIX version $version"
       - name: Save VSIX
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

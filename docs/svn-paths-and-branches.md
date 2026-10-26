@@ -2,11 +2,18 @@
 
 Git-SVN Shuttle manages tracking paths for each local Git repository. It can keep an old project-first layout alongside a new repository-wide layout, then create an SVN feature branch and connect a local work branch to its imported history.
 
-In Visual Studio, open **Tools > Git-SVN Shuttle** and select **SVN 경로 · 브랜치** on the repository row. **기존 추적 경로 조회** reads the current configuration. **전송 대상 다시 조회** resolves the current local branch's actual dcommit destination. The command bar action **SVN 저장소 새 연결** opens the same form for an existing local folder, including a folder without Git metadata.
+In Visual Studio, open **Tools > Git-SVN Shuttle** and select **SVN 연결 관리** on the repository row.
+The panel reads the configuration and opens **새 브랜치**.
+Use **연결 설정** to edit tracking paths, **설정 다시 조회** to reload configuration, and **연결 다시 확인** to resolve the current local branch's actual SVN destination.
+The command bar action **SVN 저장소 새 연결** opens connection settings for an existing local folder, including a folder without Git metadata.
 
 ## Tracking paths
 
-Enter a **기준 URL** and paths relative to it. Use one path per line in the separate trunk, branches, and tags fields. Applying settings performs a fetch as well as saving the local Git configuration.
+In **연결 설정**, enter the **SVN 기준 주소** and select a path layout.
+Choose **주소 아래의 trunk, branches, tags** for a conventional project root, or **입력한 주소 하나만** for an exact trunk or branch URL.
+Use **경로 직접 지정** or expand **고급 설정: 가져올 경로 편집** for custom layouts.
+Enter paths relative to the base URL, one per line in the separate trunk, branches, and tags fields.
+**SVN 이력 가져오기** saves the local Git configuration and fetches history.
 
 For this repository URL:
 
@@ -26,7 +33,9 @@ The branch and tag fields also accept a container path without `/*`; the applica
 
 Project folders are optional. A shared branch directory with project-prefixed names can use `branches/ProjectA-*`. A shared tag directory can similarly use `tags/ProjectA-*`. Intermediate folders must be explicit: `branches/products/ProjectA/*` tracks the branches below that folder. A single `*` matches within one path component; it does not search arbitrary directory depths. List each required container separately.
 
-**추적 경로 적용 및 fetch** saves repository-local settings and fetches all configured SVN remotes with initial checkout disabled. New mappings use separate remote refs and revision cursors, so a newly added path can import history older than the latest revision already fetched for an existing path. Distinct old and new branches with the same leaf name receive separate ref namespaces.
+**SVN 이력 가져오기** saves repository-local settings and fetches all configured SVN remotes with initial checkout disabled.
+New mappings use separate remote refs and revision cursors, so a newly added path can import history older than the latest revision already fetched for an existing path.
+Distinct old and new branches with the same leaf name receive separate ref namespaces.
 
 An existing Git-SVN repository may use a project URL as its remote base rather than the repository root. The form can display a common base URL across those mappings. Tracking identity uses the completed SVN URL, so changing the displayed base from `/repos/team/ProjectA` to `/repos/team` and entering `ProjectA/trunk` reuses the existing trunk binding.
 
@@ -62,24 +71,37 @@ The selected ref must be the SVN path intended for this work. If the folder alre
 
 ## Create an SVN server branch
 
-Open the **SVN 브랜치 생성** tab and enter:
+Open **새 브랜치** and enter a new branch name.
+The form prefers the current branch's confirmed SVN source, or uses the configured trunk when there is exactly one candidate.
+It fills the destination folder when there is exactly one configured branch container.
+If several sources or destinations are possible, choose them from the lists.
+Both fields also accept a full SVN URL or a path relative to the loaded base URL.
 
-| Field | Example |
-| --- | --- |
-| Source SVN path | `https://svn.example.com/repos/team/trunk/ProjectA` |
-| Revision | `1250` |
-| Destination parent | `https://svn.example.com/repos/team/branches/ProjectA` |
-| SVN branch name | `fix-login` |
-| Creation commit message | `Create ProjectA login fix branch from r1250` |
-| Local Git branch | `work/fix-login` |
+The preview shows the completed destination URL, revision, local Git name, and whether the new branch will be checked out.
+The following values are filled automatically and can be changed under **고급 설정**:
 
-This creates `/branches/ProjectA/fix-login` by server-side SVN copy. Use a nonnegative numeric revision or `HEAD`. Numeric revisions set both the source peg revision and operative revision, which allows copying the requested historical path even if it was subsequently moved. The destination parent can contain intermediate folders; missing destination parents are created by SVN's `--parents` behavior. The branch name itself must be one path component.
+| Setting | Default | Example override |
+| --- | --- | --- |
+| Revision | Latest server revision (`HEAD`) | `1250` |
+| Creation commit message | `브랜치 생성: fix-login` | `Create login fix from r1250` |
+| Local Git branch | SVN branch name, with characters unsuitable for Git replaced | `work/fix-login` |
+| Switch after creation | Enabled | Disable to preserve the current worktree |
+
+Clearing the message or local name restores its automatic value.
+
+For a source of `trunk/ProjectA`, destination folder `branches/ProjectA`, and name `fix-login`, **브랜치 만들기** creates `/branches/ProjectA/fix-login` by server-side SVN copy.
+Use a nonnegative numeric revision or `HEAD`.
+Numeric revisions set both the source peg revision and operative revision, which allows copying the requested historical path even if it was subsequently moved.
+The destination parent can contain intermediate folders; missing destination parents are created by SVN's `--parents` behavior.
+The branch name itself must be one path component.
 
 For the old layout, the source can be `/ProjectA/trunk` and the destination parent `/ProjectA/branches`. For a shared directory without a project folder, use `/branches` and branch name `ProjectA-fix-login`. During migration, a source in the old layout and destination in the new layout are supported within the same SVN repository.
 
 Full URLs are the clearest choice when several remote bases coexist. The Visual Studio form resolves relative paths against its displayed base URL. Callers using the core service directly can use relative paths when the configured remote URLs have a common URL ancestor on the same server; paths are resolved against that common ancestor.
 
-After SVN copy succeeds, the application reuses a compatible existing tracking mapping or creates a separate exact mapping, fetches the branch, and creates a local branch from that imported ref. With **생성 후 연결된 로컬 브랜치로 전환** enabled, it also checks out the local branch and validates its actual dcommit destination. Subsequent commits on that branch publish to the new SVN branch through the existing publish workflow.
+After SVN copy succeeds, the application reuses a compatible existing tracking mapping or creates a separate exact mapping, fetches the branch, and creates a local branch from that imported ref.
+With **생성 후 이 브랜치로 전환** enabled under advanced settings, it also checks out the local branch and validates its actual dcommit destination.
+Subsequent commits on that branch publish to the new SVN branch through the existing publish workflow.
 
 Switching requires an attached symbolic Git branch and no uncommitted tracked changes or in-progress Git operation. A clean unborn branch immediately after the first import is supported; it does not need an existing commit or SVN baseline. Clear the checkbox to create the local branch while preserving current local work, including an unborn HEAD. An unrelated local branch with the requested name is rejected without moving its commits. Choose a different local name in that case.
 
@@ -104,18 +126,26 @@ Use an explicit Git replay when existing local commits must publish to a new SVN
    ```
 
 4. Resolve any conflicts through Git. Restore saved working changes deliberately; `git stash apply --index` can restore staged changes when applicable, but may conflict against the new history.
-5. Refresh **전송 대상 다시 조회** and check the destination URL. Review the pending commits in Git-SVN Shuttle, then use the existing publish confirmation and dcommit operation.
+5. In **연결 설정**, select **연결 다시 확인** and check the destination URL. Review the pending commits in Git-SVN Shuttle, then use the existing publish confirmation and dcommit operation.
 
 For example, create the backup while still on the old branch with `git branch backup/old-work`. The baseline is the imported SVN commit immediately preceding the intended local commits; inspect first-parent history to identify it. A cherry-pick creates new Git commit IDs on the destination's SVN ancestry while keeping the original branch intact. Do not include imported SVN commits or merge commits in the replay range.
 
 ## Actual dcommit destination
 
-The management panel queries Git-SVN's current history and revision-map association, then resolves the matching fetch/branch/tag mapping and any `svn.commiturl`, remote `commiturl`, or remote `pushurl` override. It displays the effective destination, imported SVN URL, revision, and tracking ref when available. Repository rows and publish confirmation also use the resolved destination. Refresh after changing branches or configuration; the panel labels its value as a point-in-time query.
+The management panel queries Git-SVN's current history and revision-map association, then resolves the matching fetch/branch/tag mapping and any `svn.commiturl`, remote `commiturl`, or remote `pushurl` override.
+Connection settings show the effective destination and put the imported SVN URL, revision, and tracking ref under **연결 상세**.
+Repository rows and publish confirmation also use the resolved destination.
+Refresh after changing branches or configuration.
+The panel's connection query has a 20-second limit; a failed or cancelled query leaves the form inputs available for correction.
 
 Ambiguous mappings or unsupported metadata rewrite settings produce an unresolved result rather than inferring a destination from the local branch name. Branch creation rejects an existing transport override that would send the new branch's commits elsewhere. Publication retains its existing snapshot validation and Git-SVN dry-run checks.
 
 ## Failures and support limits
 
+- The panel shows the current operation above the form and keeps its action buttons visible at the bottom.
+  **닫기** leaves an active operation running; use **작업 취소** to stop it.
+  Connection errors show a next action and a read-only retry button, with command output under **결과 상세**.
+  A server branch that was created, or whose copy outcome is unknown, cannot be created again at the same destination within the current form.
 - If tracking fetch fails, saved mappings and any imported history remain. Apply the same settings again after correcting the fetch failure. Git config changes are committed together under `config.lock`; a conflicting writer or invalid settings leave the existing configuration intact.
 - If SVN copy succeeds but fetch, local branch creation, or checkout fails, the server branch remains. The result includes its URL. Continue by fetching the reported remote and creating or switching the local branch from its imported ref; do not run SVN copy again for the same destination. Cancellation while copy is running can leave its server outcome unknown, so inspect SVN before retrying.
 - A preexisting destination is not overwritten. The creation form creates server branches; attaching an arbitrary already-existing server branch can be done by adding its tracking path, fetching, and explicitly creating a local Git branch from the imported ref.
@@ -131,6 +161,15 @@ The tracking configuration tests use real local Git configuration and refs to ve
 
 The [disposable SVN integration probe](../tests/GitSvnShuttle.TrackingProbe/README.md) passed on Linux with .NET 10.0.402, git-svn 2.52, and SVN 1.14.5. It verified old, new, and mixed layouts; exact older numeric-revision copies; Korean, space, and percent branch names; flat project-prefix patterns; nested containers; tags; clean unborn branch connection; and branch preparation without switching while local work is dirty. Actual dcommit was checked on the destination SVN path, including the retained old destination after migration and a new branch outside the configured patterns. Windows CI runs the same probe alongside the existing rebase/dcommit checks.
 
-The final probe also published a new commit through a retained legacy wildcard branch binding after removing its discovery pattern. Both that branch and the retained legacy trunk received their intended commits; the corresponding new-layout paths did not receive them.
+The earlier integration probe also published a new commit through a retained legacy wildcard branch binding after removing its discovery pattern.
+Both that branch and the retained legacy trunk received their intended commits; the corresponding new-layout paths did not receive them.
 
-The Linux-compatible unit suite passed 180 tests. Three existing Windows-specific tests were excluded (two directory-junction tests invoking `cmd.exe`, and one Windows relative-executable-path assertion). The VSIX assembly built with `EnableWindowsTargeting=true`, with zero warnings and zero errors. VSIX packaging, execution inside Visual Studio, and the Windows CI jobs were not run in this Linux environment.
+For the management UI update, all 198 tests passed on Windows.
+The Release VSIX built with zero warnings and zero errors.
+The WPF preview checks cover eight management states in light and dark themes, including actual input bindings, advanced settings, source selection, refresh preservation, and busy-state controls.
+They use fictional paths and reserved `.test` addresses with no Git or SVN process execution in the preview.
+The local Windows integration run passed against a disposable SVN server bound to `127.0.0.1`.
+It verified the production form's name-only branch creation, branch-only dcommit, and recovery from a real Git ref-lock failure after SVN copy without creating the server branch twice.
+Existing rebase, nested repository publishing, layout migration, and dirty-state preservation checks also passed.
+No company SVN server was used.
+Interactive execution inside Visual Studio remains unverified.

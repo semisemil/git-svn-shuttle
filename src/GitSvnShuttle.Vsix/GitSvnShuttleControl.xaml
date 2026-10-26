@@ -65,6 +65,71 @@
       <Setter Property="BorderBrush" Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBorderKey}}"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
+
+    <Style x:Key="ManagementInput" TargetType="TextBox" BasedOn="{StaticResource SvnInput}">
+      <Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="8,6"/>
+      <Setter Property="IsEnabled" Value="{Binding CanEditSvnManagement}"/>
+    </Style>
+    <Style x:Key="ManagementHelp" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12"/><Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Margin" Value="0,5,0,0"/><Setter Property="Opacity" Value="0.8"/>
+    </Style>
+    <Style x:Key="ManagementLabel" TargetType="Label">
+      <Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,16,0,6"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"/>
+    </Style>
+    <Style x:Key="ManagementTab" TargetType="TabItem">
+      <Setter Property="Foreground" Value="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
+        <Border x:Name="TabSurface" Padding="16,10" BorderThickness="0,0,0,2" BorderBrush="Transparent" Background="Transparent">
+          <ContentPresenter x:Name="TabHeader" ContentSource="Header"/>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsSelected" Value="True"><Setter TargetName="TabHeader" Property="TextElement.FontWeight" Value="SemiBold"/><Setter TargetName="TabSurface" Property="BorderBrush" Value="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}"/></Trigger>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="TabSurface" Property="Background" Value="{DynamicResource {x:Static shell:VsBrushes.CommandBarHoverKey}}"/></Trigger>
+          <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="TabSurface" Property="Background" Value="{DynamicResource {x:Static shell:VsBrushes.CommandBarHoverKey}}"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="ManagementCombo" TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="8,6"/>
+      <Setter Property="Foreground" Value="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"/>
+      <Setter Property="Background" Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBackgroundKey}}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBorderKey}}"/>
+      <Setter Property="IsEnabled" Value="{Binding CanEditSvnManagement}"/>
+      <Setter Property="ItemTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></Setter.Value></Setter>
+      <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="ComboBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+          <Border x:Name="ItemSurface" Padding="{TemplateBinding Padding}" Background="Transparent"><ContentPresenter/></Border>
+          <ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource {x:Static shell:VsBrushes.CommandBarHoverKey}}"/></Trigger></ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+      </Style></Setter.Value></Setter>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+        <Grid>
+          <Border x:Name="ComboSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"/>
+          <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"><Path Data="{StaticResource ChevronGeometry}" Width="10" Height="6" Stretch="Fill" StrokeThickness="1.5" Stroke="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}" HorizontalAlignment="Right" Margin="0,0,10,0"/></Border></ControlTemplate></ToggleButton.Template>
+          </ToggleButton>
+          <ContentPresenter x:Name="Selection" Margin="8,6,30,6" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" VerticalAlignment="Center"/>
+          <TextBox x:Name="PART_EditableTextBox" Visibility="Collapsed" Margin="7,3,30,3" Padding="0" Background="Transparent" Foreground="{TemplateBinding Foreground}" BorderThickness="0" VerticalContentAlignment="Center">
+            <TextBox.Template><ControlTemplate TargetType="TextBox"><ScrollViewer x:Name="PART_ContentHost" Focusable="False"/></ControlTemplate></TextBox.Template>
+          </TextBox>
+          <Popup x:Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
+            <Border Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="240" Background="{DynamicResource {x:Static shell:VsBrushes.ComboBoxBackgroundKey}}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+              <ScrollViewer CanContentScroll="True" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
+            </Border>
+          </Popup>
+        </Grid>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsEditable" Value="True"><Setter TargetName="Selection" Property="Visibility" Value="Collapsed"/><Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/></Trigger>
+          <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="ComboSurface" Property="BorderBrush" Value="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}"/></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ComboSurface" Property="Opacity" Value="0.6"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
   </UserControl.Resources>
 
   <Grid>
@@ -129,7 +194,7 @@
               <Border BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,0,0,1" SnapsToDevicePixels="True">
                 <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="Transparent"/><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Background" Value="{DynamicResource {x:Static shell:VsBrushes.ComboBoxMouseOverBackgroundBeginKey}}"/></DataTrigger></Style.Triggers></Style></Border.Style>
                 <StackPanel>
-                  <Button Style="{StaticResource TextButton}" Content="SVN 경로 · 브랜치" Command="{Binding ManageSvnCommand}" HorizontalAlignment="Right" MinHeight="24" Padding="8,2" Margin="8,4,10,0" ToolTip="추적 경로 편집, SVN 원격 브랜치 생성, 실제 dcommit 대상 조회" AutomationProperties.Name="저장소 SVN 경로와 브랜치 관리"/>
+                  <Button Style="{StaticResource TextButton}" Content="SVN 연결 관리" Command="{Binding ManageSvnCommand}" HorizontalAlignment="Right" MinHeight="24" Padding="8,2" Margin="8,4,10,0" ToolTip="SVN 연결 설정과 새 작업 브랜치 만들기" AutomationProperties.Name="저장소 SVN 연결 관리"/>
                   <!-- Wide: a flat, dense table row. -->
                   <Grid MinHeight="54" Margin="8,0" MouseLeftButtonUp="OnRepositorySummaryMouseLeftButtonUp">
                     <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsCompactLayout, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Grid.Style>
@@ -198,67 +263,149 @@
     </Grid>
 
     <Grid Grid.RowSpan="4" Visibility="{Binding SvnManagementVisibility, FallbackValue=Collapsed, TargetNullValue=Collapsed}" Background="#99000000">
-      <Border MinWidth="360" MaxWidth="640" Margin="16" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBackgroundKey}}" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="1">
+      <Border MinWidth="360" MaxWidth="680" Margin="12" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBackgroundKey}}" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="1">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <Border Padding="14,12" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,0,0,1"><TextBlock Text="SVN 경로와 브랜치" FontSize="16" FontWeight="SemiBold"/></Border>
-          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="14,10">
-              <StackPanel IsEnabled="{Binding CanEditSvnManagement}">
-                <TextBlock Text="로컬 저장소 폴더" Margin="0,0,0,3"/>
-                <TextBox Style="{StaticResource SvnInput}" Text="{Binding ManagementRepositoryPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="로컬 저장소 폴더"/>
-                <Button Style="{StaticResource TextButton}" Content="기존 추적 경로 조회" Command="{Binding LoadTrackingPathsCommand}" HorizontalAlignment="Left" Margin="0,6,0,12"/>
-                <TextBlock Text="현재 로컬 브랜치의 실제 dcommit 대상 (조회 시점)" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding ActualDcommitTarget}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,4" AutomationProperties.Name="실제 dcommit 대상"/>
-                <Button Style="{StaticResource TextButton}" Content="전송 대상 다시 조회" Command="{Binding RefreshDcommitTargetCommand}" HorizontalAlignment="Left" Margin="0,0,0,12"/>
-                <TabControl Background="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBackgroundKey}}" Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}">
-                  <TabItem Header="추적 경로">
-                    <StackPanel Margin="8,10">
-                      <TextBlock Text="SVN 기준 URL" Margin="0,0,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding TrackingBaseUrl, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 기준 URL"/>
-                      <TextBlock Text="모든 경로는 기준 URL에 상대적으로 입력하세요. 기준 URL 자체는 '.'으로 지정합니다. 경로를 한 줄씩 추가하면 기존 배치와 새 배치를 함께 추적합니다." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,6,0,10"/>
-                      <TextBlock Text="trunk 경로" Margin="0,0,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding TrunkPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="trunk 추적 경로, 한 줄에 하나"/>
-                      <TextBlock Text="branches 경로 (중간 폴더 또는 * 패턴)" Margin="0,8,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding BranchesPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="branches 추적 경로, 한 줄에 하나"/>
-                      <TextBlock Text="tags 경로 (배포본)" Margin="0,8,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding TagsPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="tags 추적 경로, 한 줄에 하나"/>
-                      <TextBlock Text="추적 경로 적용은 fetch까지 수행합니다. 기존 로컬 커밋, 스테이징 상태와 미커밋 변경을 보존하며 기존 이력의 전송 연결도 유지합니다." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,10,0,8"/>
-                      <TextBlock Text="기존 로컬 브랜치의 전송 대상은 자동 변경하지 않습니다. 새 경로에서 작업하려면 해당 SVN 이력에 연결된 로컬 브랜치를 사용하세요. 새 연결은 작업 파일을 checkout하지 않습니다." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,8"/>
-                      <TextBlock Text="보존된 이력·작업 브랜치 연결 (읽기 전용)" FontSize="10.5" FontWeight="SemiBold"/>
-                      <TextBlock Text="{Binding RetainedTrackingPathsText}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Margin="0,4,0,10"/>
-                      <Button Style="{StaticResource PrimaryTextButton}" Content="추적 경로 적용 및 fetch" Command="{Binding SaveTrackingPathsCommand}" HorizontalAlignment="Right"/>
-                    </StackPanel>
-                  </TabItem>
-                  <TabItem Header="SVN 브랜치 생성">
-                    <StackPanel Margin="8,10">
-                      <TextBlock Text="상대 경로는 추적 경로 탭에 표시된 SVN 기준 URL을 사용합니다. 기준 URL 자체는 '.'으로 지정하세요." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,8"/>
-                      <TextBlock Text="기준 SVN 경로 (URL 또는 기준 URL 상대 경로)" Margin="0,0,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding BranchSourcePath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="브랜치 기준 SVN 경로"/>
-                      <TextBlock Text="기준 리비전 (HEAD 또는 숫자)" Margin="0,8,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding BranchRevision, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="브랜치 기준 SVN 리비전"/>
-                      <TextBlock Text="생성 위치 (상위 폴더 URL 또는 상대 경로)" Margin="0,8,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding BranchDestinationPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 브랜치 생성 위치"/>
-                      <TextBlock Text="SVN 브랜치 이름" Margin="0,8,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding SvnBranchName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 브랜치 이름"/>
-                      <TextBlock Text="SVN 브랜치 생성 커밋 메시지" Margin="0,8,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" MinHeight="52" AcceptsReturn="True" Text="{Binding BranchCommitMessage, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 브랜치 생성 커밋 메시지"/>
-                      <TextBlock Text="연결할 로컬 Git 브랜치 이름" Margin="0,8,0,3"/>
-                      <TextBox Style="{StaticResource SvnInput}" Text="{Binding LocalBranchName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="연결할 로컬 Git 브랜치 이름"/>
-                      <CheckBox Content="생성 후 연결된 로컬 브랜치로 전환" IsChecked="{Binding SwitchToCreatedBranch}" Margin="0,10,0,6"/>
-                      <TextBlock Text="SVN 서버에 브랜치를 만든 뒤 fetch하고 로컬 브랜치를 연결합니다. 서버 생성 이후 작업이 실패하면 결과 메시지를 확인하세요." TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,8"/>
-                      <Button Style="{StaticResource PrimaryTextButton}" Content="SVN 브랜치 생성 및 로컬 연결" Command="{Binding CreateSvnBranchCommand}" HorizontalAlignment="Right"/>
-                    </StackPanel>
-                  </TabItem>
-                </TabControl>
-              </StackPanel>
-              <TextBlock Text="{Binding ManagementStatus}" TextWrapping="Wrap" FontSize="11" Margin="0,10,0,0"/>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Border Padding="20,16" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,0,0,1">
+            <StackPanel>
+              <TextBlock Text="SVN 연결 관리" FontSize="18" FontWeight="SemiBold"/>
+              <TextBlock Text="{Binding ManagementRepositoryPath}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ManagementRepositoryPath}" Margin="0,6,0,0" FontSize="12"/>
             </StackPanel>
-          </ScrollViewer>
-          <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="14,10">
-            <Button Style="{StaticResource TextButton}" Content="작업 취소" Command="{Binding CancelOperationCommand}" Visibility="{Binding CancelOperationVisibility}" Margin="0,0,6,0"/>
-            <Button Style="{StaticResource TextButton}" Content="닫기" Command="{Binding CloseSvnManagementCommand}"/>
-          </StackPanel>
+          </Border>
+          <Border Grid.Row="1" Padding="20,12" Visibility="{Binding BusyVisibility}" Background="{DynamicResource {x:Static shell:VsBrushes.InfoBackgroundKey}}">
+            <StackPanel>
+              <TextBlock Text="{Binding ManagementProgressText}" Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}" TextWrapping="Wrap" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/>
+              <ProgressBar Height="3" IsIndeterminate="True" Margin="0,10,0,0" Foreground="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" AutomationProperties.Name="SVN 작업 진행 중"/>
+            </StackPanel>
+          </Border>
+          <Border Grid.Row="2" Visibility="{Binding ManagementFeedbackVisibility}" Padding="20,12" Background="{DynamicResource {x:Static shell:VsBrushes.InfoBackgroundKey}}">
+            <StackPanel DataContext="{Binding ManagementFeedback}" TextElement.Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}">
+              <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+              <TextBlock Text="{Binding NextAction}" Style="{StaticResource ManagementHelp}"/>
+              <Button Content="연결 다시 확인" Command="{Binding DataContext.RefreshDcommitTargetCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" HorizontalAlignment="Left" Margin="0,10,0,0">
+                <Button.Style><Style TargetType="Button" BasedOn="{StaticResource TextButton}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding CanRetryQuery}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style>
+              </Button>
+              <Expander Header="결과 상세" Margin="0,8,0,0" Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}">
+                <Expander.Style><Style TargetType="Expander"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasDetails}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Expander.Style>
+                <TextBox Text="{Binding Details, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="120" VerticalScrollBarVisibility="Auto" Background="Transparent" Foreground="{DynamicResource {x:Static shell:VsBrushes.InfoTextKey}}" BorderThickness="0" Margin="0,8,0,0" AutomationProperties.Name="작업 결과 상세"/>
+              </Expander>
+            </StackPanel>
+          </Border>
+            <TabControl Grid.Row="3" SelectedIndex="{Binding ManagementTabIndex}" Margin="20,4,20,16" ItemContainerStyle="{StaticResource ManagementTab}" Background="Transparent" BorderThickness="0">
+              <TabControl.Template><ControlTemplate TargetType="TabControl">
+                <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                  <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="0"/>
+                  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><ContentPresenter ContentSource="SelectedContent" Margin="0,4,0,0"/></ScrollViewer>
+                </Grid>
+              </ControlTemplate></TabControl.Template>
+              <TabItem Header="새 브랜치">
+                <StackPanel>
+                  <TextBlock Text="SVN 서버의 원본을 복사해 새 작업 브랜치를 만듭니다." Style="{StaticResource ManagementHelp}" Margin="0,12,0,0"/>
+                  <Label Content="복사할 원본" Target="{Binding ElementName=BranchSourceInput}" Style="{StaticResource ManagementLabel}"/>
+                  <ComboBox x:Name="BranchSourceInput" Style="{StaticResource ManagementCombo}" IsEditable="True" StaysOpenOnEdit="True" ItemsSource="{Binding BranchForm.SourceChoices}" Text="{Binding BranchForm.SourcePath, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding BranchForm.SourceUrl}" AutomationProperties.Name="복사할 원본 SVN 경로"/>
+                  <TextBlock Text="목록에서 선택하거나 SVN 경로를 입력할 수 있습니다." Style="{StaticResource ManagementHelp}"/>
+                  <Label Content="새 브랜치 이름" Target="{Binding ElementName=BranchNameInput}" Style="{StaticResource ManagementLabel}"/>
+                  <TextBox x:Name="BranchNameInput" Style="{StaticResource ManagementInput}" Text="{Binding BranchForm.Name, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="새 SVN 브랜치 이름"/>
+                  <TextBlock Text="예: fix-login 또는 release-2026" Style="{StaticResource ManagementHelp}"/>
+                  <Label Content="저장 위치" Target="{Binding ElementName=BranchDestinationInput}" Style="{StaticResource ManagementLabel}"/>
+                  <ComboBox x:Name="BranchDestinationInput" Style="{StaticResource ManagementCombo}" IsEditable="True" StaysOpenOnEdit="True" ItemsSource="{Binding BranchForm.DestinationChoices}" Text="{Binding BranchForm.DestinationPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="새 SVN 브랜치를 넣을 폴더"/>
+                  <TextBlock Text="새 브랜치를 넣을 폴더입니다. 후보가 여러 개면 선택하세요." Style="{StaticResource ManagementHelp}"/>
+                  <Border BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,1,0,1" Padding="0,12" Margin="0,20,0,0">
+                    <StackPanel>
+                      <TextBlock Text="생성 결과 미리보기" FontWeight="SemiBold"/>
+                      <TextBlock Text="{Binding BranchForm.DestinationUrl}" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource {x:Static shell:VsBrushes.AccentLightKey}}" AutomationProperties.Name="생성될 SVN 브랜치 주소"/>
+                      <TextBlock Text="{Binding BranchForm.RevisionSummary, StringFormat=복사할 버전: {0}}" Style="{StaticResource ManagementHelp}"/>
+                      <TextBlock Text="{Binding BranchForm.LocalName, StringFormat=로컬 Git 브랜치: {0}}" Style="{StaticResource ManagementHelp}"/>
+                      <TextBlock Text="{Binding BranchForm.SwitchSummary}" Style="{StaticResource ManagementHelp}"/>
+                    </StackPanel>
+                  </Border>
+                  <Expander x:Name="BranchAdvancedSettings" Header="고급 설정" Margin="0,16,0,0" Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}">
+                    <StackPanel Margin="0,0,0,4">
+                      <Label Content="복사할 버전" Target="{Binding ElementName=BranchRevisionInput}" Style="{StaticResource ManagementLabel}"/>
+                      <TextBox x:Name="BranchRevisionInput" Style="{StaticResource ManagementInput}" Text="{Binding BranchForm.Revision, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="브랜치 기준 SVN 리비전"/>
+                      <TextBlock Text="HEAD는 서버의 최신 버전입니다. 과거 버전에서 만들려면 리비전 번호를 입력하세요." Style="{StaticResource ManagementHelp}"/>
+                      <Label Content="생성 기록에 남길 메시지" Target="{Binding ElementName=BranchMessageInput}" Style="{StaticResource ManagementLabel}"/>
+                      <TextBox x:Name="BranchMessageInput" Style="{StaticResource ManagementInput}" MinHeight="60" AcceptsReturn="True" Text="{Binding BranchForm.Message, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 브랜치 생성 커밋 메시지"/>
+                      <Label Content="로컬 Git 브랜치 이름" Target="{Binding ElementName=LocalBranchInput}" Style="{StaticResource ManagementLabel}"/>
+                      <TextBox x:Name="LocalBranchInput" Style="{StaticResource ManagementInput}" Text="{Binding BranchForm.LocalName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="연결할 로컬 Git 브랜치 이름"/>
+                      <TextBlock Text="기본값은 새 SVN 브랜치 이름입니다. Git에서 사용할 수 없는 문자는 바꿉니다. 이름이나 메시지를 비우면 자동값을 다시 사용합니다." Style="{StaticResource ManagementHelp}"/>
+                      <CheckBox Content="생성 후 이 브랜치로 전환" IsChecked="{Binding BranchForm.SwitchAfterCreate}" IsEnabled="{Binding CanEditSvnManagement}" Margin="0,16,0,0"/>
+                      <TextBlock Text="현재 파일을 그대로 두려면 전환을 끄세요. 새 로컬 브랜치는 준비됩니다." Style="{StaticResource ManagementHelp}"/>
+                    </StackPanel>
+                  </Expander>
+                  <TextBlock Text="SVN 서버에 브랜치를 만든 뒤 이력을 가져와 로컬 Git 브랜치를 연결합니다." Style="{StaticResource ManagementHelp}" Margin="0,10,0,0"/>
+                </StackPanel>
+              </TabItem>
+              <TabItem Header="연결 설정">
+                <StackPanel>
+                  <Label Content="로컬 저장소 폴더" Target="{Binding ElementName=ManagementRepositoryInput}" Style="{StaticResource ManagementLabel}"/>
+                  <TextBox x:Name="ManagementRepositoryInput" Style="{StaticResource ManagementInput}" Text="{Binding ManagementRepositoryPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="로컬 저장소 폴더"/>
+                  <Button Style="{StaticResource TextButton}" Content="설정 다시 조회" Command="{Binding LoadTrackingPathsCommand}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                  <Label Content="SVN 기준 주소" Target="{Binding ElementName=TrackingBaseInput}" Style="{StaticResource ManagementLabel}"/>
+                  <TextBox x:Name="TrackingBaseInput" Style="{StaticResource ManagementInput}" Text="{Binding TrackingBaseUrl, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="SVN 기준 URL"/>
+                  <TextBlock Text="예: https://svn.example.com/repos/ProjectA" Style="{StaticResource ManagementHelp}"/>
+                  <Label Content="가져올 경로 구조" Target="{Binding ElementName=TrackingLayoutInput}" Style="{StaticResource ManagementLabel}"/>
+                  <ComboBox x:Name="TrackingLayoutInput" Style="{StaticResource ManagementCombo}" SelectedIndex="{Binding TrackingLayoutIndex}" AutomationProperties.Name="SVN 경로 구조">
+                    <ComboBoxItem Content="주소 아래의 trunk, branches, tags"/>
+                    <ComboBoxItem Content="입력한 주소 하나만"/>
+                    <ComboBoxItem Content="경로 직접 지정"/>
+                  </ComboBox>
+                  <TextBlock Text="프로젝트의 trunk나 브랜치 주소를 직접 입력했다면 ‘입력한 주소 하나만’을 선택하세요." Style="{StaticResource ManagementHelp}"/>
+                  <Expander Header="고급 설정: 가져올 경로 편집" IsExpanded="{Binding IsTrackingAdvancedExpanded}" Margin="0,16,0,0" Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}">
+                    <StackPanel>
+                      <TextBlock Text="기준 주소에 상대적인 경로를 한 줄에 하나씩 입력하세요. 주소 자체는 '.'입니다. 기존 배치와 새 배치를 함께 가져올 수 있습니다." Style="{StaticResource ManagementHelp}" Margin="0,10,0,0"/>
+                      <Label Content="trunk 경로" Target="{Binding ElementName=TrunkPathsInput}" Style="{StaticResource ManagementLabel}"/>
+                      <TextBox x:Name="TrunkPathsInput" Style="{StaticResource ManagementInput}" MinHeight="54" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding TrunkPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="trunk 추적 경로, 한 줄에 하나"/>
+                      <Label Content="브랜치 폴더 또는 패턴" Target="{Binding ElementName=BranchesPathsInput}" Style="{StaticResource ManagementLabel}"/>
+                      <TextBox x:Name="BranchesPathsInput" Style="{StaticResource ManagementInput}" MinHeight="54" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding BranchesPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="branches 추적 경로, 한 줄에 하나"/>
+                      <TextBlock Text="예: branches/ProjectA/* 또는 ProjectA/branches/*" Style="{StaticResource ManagementHelp}"/>
+                      <Label Content="태그 폴더 또는 패턴" Target="{Binding ElementName=TagsPathsInput}" Style="{StaticResource ManagementLabel}"/>
+                      <TextBox x:Name="TagsPathsInput" Style="{StaticResource ManagementInput}" MinHeight="54" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Text="{Binding TagsPathsText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="tags 추적 경로, 한 줄에 하나"/>
+                    </StackPanel>
+                  </Expander>
+                  <TextBlock Text="연결 설정을 저장하고 이력을 가져옵니다. 기존 커밋과 작업 파일은 유지되며, 현재 Git 브랜치의 전송 대상은 바뀌지 않습니다." Style="{StaticResource ManagementHelp}" Margin="0,10,0,0"/>
+                  <Border BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,20,0,0">
+                    <StackPanel>
+                      <TextBlock Text="현재 Git 브랜치의 SVN 전송 대상" FontWeight="SemiBold"/>
+                      <TextBlock Text="{Binding ActualDcommitTarget}" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
+                      <TextBlock Text="{Binding DcommitTargetGuidance}" Style="{StaticResource ManagementHelp}"/>
+                      <Button Style="{StaticResource TextButton}" Content="연결 다시 확인" Command="{Binding RefreshDcommitTargetCommand}" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+                      <Expander Header="연결 상세" Margin="0,12,0,0" Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}">
+                        <StackPanel>
+                          <TextBox Text="{Binding DcommitTargetDetails, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" Foreground="{DynamicResource {x:Static shell:VsBrushes.ToolWindowTextKey}}" BorderThickness="0" Margin="0,8,0,0" AutomationProperties.Name="실제 dcommit 대상 상세"/>
+                          <TextBlock Text="기존 이력과 작업 브랜치 연결" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                          <TextBlock Text="{Binding RetainedTrackingPathsText}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                      </Expander>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </TabItem>
+            </TabControl>
+          <Border Grid.Row="4" BorderBrush="{DynamicResource {x:Static shell:VsBrushes.ToolWindowBorderKey}}" BorderThickness="0,1,0,0" Padding="20,12">
+            <StackPanel>
+            <TextBlock Text="{Binding BranchForm.ValidationMessage}" AutomationProperties.LiveSetting="Polite">
+              <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource ManagementHelp}"><Setter Property="Margin" Value="0,0,0,10"/><Style.Triggers>
+                <DataTrigger Binding="{Binding BranchForm.ValidationMessage}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                <DataTrigger Binding="{Binding ManagementTabIndex}" Value="1"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                <DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+              </Style.Triggers></Style></TextBlock.Style>
+            </TextBlock>
+            <DockPanel>
+              <Button DockPanel.Dock="Left" Style="{StaticResource TextButton}" Content="로그 보기" Command="{Binding ShowLogCommand}" HorizontalAlignment="Left"/>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CancelManagementButton" Style="{StaticResource TextButton}" Content="작업 취소" Command="{Binding CancelOperationCommand}" Visibility="{Binding CancelOperationVisibility}" Margin="0,0,8,0"/>
+                <Button x:Name="CreateBranchButton" Content="브랜치 만들기" Command="{Binding CreateSvnBranchCommand}" Margin="0,0,8,0">
+                  <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PrimaryTextButton}"><Style.Triggers><DataTrigger Binding="{Binding ManagementTabIndex}" Value="1"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Button.Style>
+                </Button>
+                <Button Content="SVN 이력 가져오기" Command="{Binding SaveTrackingPathsCommand}" Margin="0,0,8,0">
+                  <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PrimaryTextButton}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding ManagementTabIndex}" Value="1"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style>
+                </Button>
+                <Button x:Name="CloseManagementButton" Style="{StaticResource TextButton}" Content="닫기" Command="{Binding CloseSvnManagementCommand}" ToolTip="진행 중인 작업은 계속됩니다. 중단하려면 작업 취소를 누르세요."/>
+              </StackPanel>
+            </DockPanel>
+            </StackPanel>
+          </Border>
         </Grid>
       </Border>
     </Grid>

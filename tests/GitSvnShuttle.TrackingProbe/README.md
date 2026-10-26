@@ -15,5 +15,7 @@ The probe checks:
 - Existing repositories initialized with conventional `git svn init`: adding and retiring paths preserve HEAD, local commits, staged changes, unstaged changes, and untracked content. Preparing a remote/local branch without switching also preserves that state. The original trunk binding and imported wildcard branch binding remain usable, with real dcommit verified on each old SVN path after retirement.
 - A new nested branch during migration: real dcommit reaches its SVN path even when the local branch name contains `trunk`.
 - A destination outside all configured branch globs: new parent directories, an exact history binding, and real dcommit to that path.
+- The production management form: name-only input, automatic paths and message, the displayed destination, a real branch-only dcommit, and duplicate-submission protection.
+- Partial creation and recovery: create an SVN branch, fail the real Git-SVN fetch with a fixture-owned ref lock, verify the current local branch is preserved, then fetch and connect the existing server branch and publish to it without another SVN copy.
 
 Successful output ends with `REAL_SVN_TRACKING_AND_BRANCHES=PASS`. CI runs this probe after the existing rebase/dcommit smoke test, using the same installed Git/SVN tools.

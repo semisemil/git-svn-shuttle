@@ -20,5 +20,7 @@
     <Compile Include="..\..\src\GitSvnShuttle.Vsix\PublishConfirmationViewModel.cs" Link="Presentation\PublishConfirmationViewModel.cs" />
     <Compile Include="..\..\src\GitSvnShuttle.Vsix\PublishCommitViewModel.cs" Link="Presentation\PublishCommitViewModel.cs" />
     <Compile Include="..\..\src\GitSvnShuttle.Vsix\SvnManagementInput.cs" Link="Presentation\SvnManagementInput.cs" />
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\SvnBranchForm.cs" Link="Presentation\SvnBranchForm.cs" />
+    <Compile Include="..\..\src\GitSvnShuttle.Vsix\SvnManagementFeedback.cs" Link="Presentation\SvnManagementFeedback.cs" />
   </ItemGroup>
 </Project>

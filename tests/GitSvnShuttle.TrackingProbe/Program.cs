@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using GitSvnShuttle.Core;
+using GitSvnShuttle.Vsix;
 
 // This probe writes only to its disposable fixture root. It needs real git-svn,
 // svn and svnadmin; it never connects to an existing SVN repository.
@@ -30,6 +31,7 @@ Console.WriteLine("FIXTURE_ROOT=" + fixtureRoot);
 await VerifyLayoutAsync("old", "Project/trunk", "Project/branches", "Project/tags");
 await VerifyLayoutAsync("new", "trunk/Project", "branches", "tags/Project", "branches/Project-*");
 await VerifyMigrationAsync();
+await VerifyManagementFormAsync();
 Console.WriteLine("REAL_SVN_TRACKING_AND_BRANCHES=PASS");
 return 0;
 
@@ -191,6 +193,72 @@ async Task VerifyMigrationAsync()
     Console.WriteLine("UNTRACKED_DESTINATION_EXACT_BINDING_DCOMMIT=PASS");
 }
 
+async Task VerifyManagementFormAsync()
+{
+    var fixture = await SeedAsync("management", "trunk/ProjectA", "branches/ProjectA", "tags/ProjectA");
+    await ConfigureAsync(fixture.Local, new GitSvnTrackingPaths(fixture.Url,
+        ["trunk/ProjectA"], ["branches/ProjectA/*"], ["tags/ProjectA/*"]));
+    var paths = await service.GetTrackingPathsAsync(fixture.Local, cancellation);
+    var initialTarget = await service.ResolveDcommitTargetAsync(fixture.Local, cancellation);
+    Require(!initialTarget.IsResolved, "form: an unborn HEAD must not have a resolved SVN destination");
+    Require(SvnManagementFeedback.ConnectionFailure(initialTarget.Problem!).CanRetryQuery,
+        "form: missing history must offer a read-only connection retry");
+    var form = new SvnBranchForm();
+    form.ApplyTracking(paths, initialTarget.SvnUrl);
+    form.Name = "form-fix";
+    var expected = fixture.Url + "/branches/ProjectA/form-fix";
+    Require(UrlEquals(form.DestinationUrl, expected), "form: the preview differs from the requested destination");
+    var result = await service.CreateSvnBranchAsync(fixture.Local, form.CreateRequest(), cancellation);
+    Require(result.Succeeded, "form: name-only branch creation failed: " + result.Message);
+    form.BlockDuplicateCreation();
+    Require(!form.IsReady, "form: successful server creation must prevent duplicate submission");
+    await RequireTargetAsync(fixture.Local, expected);
+    File.WriteAllText(Path.Combine(fixture.Local, "form-only.txt"), "created through automatic form defaults\n");
+    await GitAsync(fixture.Local, "add", "form-only.txt");
+    await GitAsync(fixture.Local, "commit", "-m", "Verify the form branch destination");
+    result = await service.DcommitAsync(fixture.Local, cancellation);
+    Require(result.Succeeded, "form: dcommit failed: " + result.Message);
+    Require(await RunAsync(svn, fixture.Root, "cat", expected + "/form-only.txt") == "created through automatic form defaults\n",
+        "form: the selected branch did not receive the commit");
+    Require(!(await RunResultAsync(svn, fixture.Root, "info", fixture.Url + "/trunk/ProjectA/form-only.txt")).Succeeded,
+        "form: trunk received the branch-only commit");
+    Console.WriteLine("FORM_BRANCH_DEFAULTS_DCOMMIT=PASS");
+
+    var failedForm = new SvnBranchForm { Name = "recover-fix", DestinationPath = "recovery/team" };
+    failedForm.ApplyTracking(paths, (await service.ResolveDcommitTargetAsync(fixture.Local, cancellation)).SvnUrl);
+    var recoveryUrl = fixture.Url + "/recovery/team/recover-fix";
+    var beforeHead = await GitAsync(fixture.Local, "rev-parse", "HEAD");
+    var beforeBranch = await GitAsync(fixture.Local, "symbolic-ref", "HEAD");
+    var lockedRunner = new LockedRefGitRunner(runner);
+    var failingService = new GitSvnWorkspaceService(lockedRunner, new ProcessSvnCommandRunner(svn));
+    result = await failingService.CreateSvnBranchAsync(fixture.Local, failedForm.CreateRequest(), cancellation);
+    Require(!result.Succeeded && lockedRunner.NativeFetchFailed, "form: a real Git ref lock must fail the native fetch after SVN copy");
+    await RunAsync(svn, fixture.Root, "info", recoveryUrl);
+    Require(await GitAsync(fixture.Local, "rev-parse", "HEAD") == beforeHead &&
+        await GitAsync(fixture.Local, "symbolic-ref", "HEAD") == beforeBranch,
+        "form: partial failure changed the current local branch or its commits");
+    var feedback = SvnManagementFeedback.Failure(result.Message, creatingBranch: true);
+    Require(feedback.ServerCopyMayHaveCompleted && feedback.Details.Contains(recoveryUrl, StringComparison.Ordinal),
+        "form: partial failure must identify the existing server branch and require recovery");
+    failedForm.BlockDuplicateCreation();
+    Require(!failedForm.IsReady, "form: partial server creation must prevent duplicate submission");
+
+    // Release the fixture-only lock, fetch the existing branch, and connect it without another SVN copy.
+    await GitAsync(fixture.Local, "svn", "fetch", "--no-checkout", lockedRunner.RemoteName);
+    var recoveredRef = await FindImportedRefAsync(fixture.Local, recoveryUrl);
+    await GitAsync(fixture.Local, "branch", "--no-track", "recovered-local", recoveredRef);
+    await GitAsync(fixture.Local, "checkout", "recovered-local");
+    await RequireTargetAsync(fixture.Local, recoveryUrl);
+    File.WriteAllText(Path.Combine(fixture.Local, "recovered.txt"), "recovered without duplicate SVN copy\n");
+    await GitAsync(fixture.Local, "add", "recovered.txt");
+    await GitAsync(fixture.Local, "commit", "-m", "Verify recovery after a locked fetch");
+    result = await service.DcommitAsync(fixture.Local, cancellation);
+    Require(result.Succeeded, "form: recovered branch dcommit failed: " + result.Message);
+    Require(await RunAsync(svn, fixture.Root, "cat", recoveryUrl + "/recovered.txt") == "recovered without duplicate SVN copy\n",
+        "form: recovered branch did not receive its commit");
+    Console.WriteLine("FORM_PARTIAL_FETCH_FAILURE_RECOVERY=PASS");
+}
+
 async Task<Fixture> SeedAsync(string name, string trunk, string branches, string tags)
 {
     var root = Path.Combine(fixtureRoot, name);
@@ -289,3 +357,32 @@ async Task<(bool Succeeded, string Output, string Error)> RunResultAsync(string 
 static bool UrlEquals(string left, string right) => Uri.UnescapeDataString(left.TrimEnd('/')) == Uri.UnescapeDataString(right.TrimEnd('/'));
 static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
 internal sealed record Fixture(string Root, string Local, string Url, string WorkingCopy);
+
+internal sealed class LockedRefGitRunner(IGitCommandRunner inner) : IGitCommandRunner
+{
+    public string RemoteName { get; private set; } = string.Empty;
+    public bool NativeFetchFailed { get; private set; }
+
+    public async Task<GitCommandResult> RunAsync(string workingDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    {
+        if (RemoteName.Length != 0 || arguments.Count != 4 || arguments[0] != "svn" || arguments[1] != "fetch")
+            return await inner.RunAsync(workingDirectory, arguments, cancellationToken);
+        RemoteName = arguments[3];
+        var config = await inner.RunAsync(workingDirectory, ["config", "--get", "svn-remote." + RemoteName + ".fetch"], cancellationToken);
+        if (!config.Succeeded || !config.StandardOutput.StartsWith(":refs/", StringComparison.Ordinal))
+            throw new InvalidOperationException("The failure fixture requires a newly created exact SVN mapping.");
+        var reference = config.StandardOutput.Trim().Substring(1);
+        var path = await inner.RunAsync(workingDirectory, ["rev-parse", "--git-path", reference + ".lock"], cancellationToken);
+        if (!path.Succeeded) throw new InvalidOperationException("The fixture ref lock path could not be resolved.");
+        var lockPath = Path.GetFullPath(Path.Combine(workingDirectory, path.StandardOutput.Trim()));
+        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
+        using (new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write)) { }
+        try
+        {
+            var result = await inner.RunAsync(workingDirectory, arguments, cancellationToken);
+            NativeFetchFailed = !result.Succeeded;
+            return result;
+        }
+        finally { File.Delete(lockPath); }
+    }
+}
