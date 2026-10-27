@@ -52,7 +52,7 @@ internal sealed class PublishConfirmationViewModel : INotifyPropertyChanged
     }
 
     public async Task<bool> IsCurrentAsync(
-        Func<GitSvnPublishSnapshot, CancellationToken, Task<OperationResult>> validate,
+        Func<IReadOnlyList<GitSvnPublishSnapshot>, CancellationToken, Task<bool>> validate,
         CancellationToken cancellationToken)
     {
         if (!isOpen)
@@ -61,18 +61,10 @@ internal sealed class PublishConfirmationViewModel : INotifyPropertyChanged
         }
 
         var expected = snapshots;
-        foreach (var snapshot in expected)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var result = await validate(snapshot, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!result.Succeeded || !isOpen || !ReferenceEquals(expected, snapshots))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = await validate(expected, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return result && isOpen && ReferenceEquals(expected, snapshots);
     }
 
     public GitSvnPublishSnapshot[] TakeSnapshots()

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using GitSvnShuttle.Core;
 using GitSvnShuttle.Vsix;
 
@@ -23,8 +24,10 @@ if (fixtureUrl != null)
 }
 Require(!Directory.Exists(fixtureRoot), "The fixture root must not exist: " + fixtureRoot);
 Directory.CreateDirectory(fixtureRoot);
-var runner = new ProcessGitCommandRunner(git);
+var runner = new TargetProbeRunner(new ProcessGitCommandRunner(git));
 var service = new GitSvnWorkspaceService(runner, new ProcessSvnCommandRunner(args.ElementAtOrDefault(1)));
+var directTargetReads = 0;
+var fallbackTargetReads = 0;
 var cancellation = CancellationToken.None;
 Console.WriteLine("FIXTURE_ROOT=" + fixtureRoot);
 
@@ -32,6 +35,9 @@ await VerifyLayoutAsync("old", "Project/trunk", "Project/branches", "Project/tag
 await VerifyLayoutAsync("new", "trunk/Project", "branches", "tags/Project", "branches/Project-*");
 await VerifyMigrationAsync();
 await VerifyManagementFormAsync();
+await VerifySha256Async();
+Require(directTargetReads > 0, "No production local target lookup was exercised.");
+Console.WriteLine($"LOCAL_TARGET_READS={directTargetReads};NATIVE_FALLBACKS={fallbackTargetReads}");
 Console.WriteLine("REAL_SVN_TRACKING_AND_BRANCHES=PASS");
 return 0;
 
@@ -80,6 +86,53 @@ async Task VerifyLayoutAsync(string name, string trunk, string branches, string 
     Require(!(await RunResultAsync(svn, fixture.Root, "info", fixture.Url + "/" + trunk + "/branch-only.txt")).Succeeded, name + ": trunk received a branch-only dcommit");
     await RequireTargetAsync(fixture.Local, branchUrl);
     Console.WriteLine(name.ToUpperInvariant() + "_LAYOUT_BRANCH_REVISION_DCOMMIT=PASS");
+    if (name == "old") await VerifyWorktreeAndLegacyAsync(fixture, branchUrl);
+}
+
+async Task VerifyWorktreeAndLegacyAsync(Fixture fixture, string expected)
+{
+    var worktree = Path.Combine(fixture.Root, "worktree");
+    await GitAsync(fixture.Local, "worktree", "add", "-b", "target-worktree-probe", worktree, "HEAD");
+    var original = await runner.RunAsync(worktree, ["svn", "info", "--url"], cancellation);
+    var inspected = await service.InspectAsync(worktree, cancellation);
+    Require(original.Succeeded
+        ? inspected.SvnTargets.Count == 1 && UrlEquals(inspected.SvnTargets[0], original.StandardOutput.Trim())
+        : inspected.SvnTargets.Count == 0, "Worktree lookup differs from native git-svn.");
+    Console.WriteLine("WORKTREE_TARGET_MATCHES_NATIVE=PASS;NATIVE_RESOLVED=" + original.Succeeded);
+
+    var target = await service.ResolveDcommitTargetAsync(fixture.Local, cancellation);
+    var svnRoot = Path.GetFullPath(Path.Combine(fixture.Local, await GitAsync(fixture.Local, "rev-parse", "--git-path", "svn")));
+    var rawRef = Regex.Replace(target.RemoteRef!, "%([0-9a-fA-F]{2})", match => ((char)Convert.ToInt32(match.Groups[1].Value, 16)).ToString());
+    var modern = Path.GetFullPath(Path.Combine(svnRoot, rawRef));
+    var legacy = Path.GetFullPath(Path.Combine(svnRoot, rawRef.Substring("refs/remotes/".Length)));
+    Require(modern.StartsWith(svnRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+        legacy.StartsWith(svnRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "Legacy fixture paths escaped SVN metadata.");
+    Require(Directory.Exists(modern) && !Directory.Exists(legacy), "Unexpected legacy fixture state.");
+    Directory.CreateDirectory(Path.GetDirectoryName(legacy)!);
+    Directory.Move(modern, legacy);
+    try
+    {
+        var before = runner.UrlInfoCalls;
+        var oldLayout = await service.InspectAsync(fixture.Local, cancellation);
+        Require(oldLayout.SvnTargets.Count == 1 && UrlEquals(oldLayout.SvnTargets[0], expected), "Legacy target differs.");
+        Require(runner.UrlInfoCalls > before, "Legacy metadata did not use native fallback.");
+    }
+    finally
+    {
+        if (Directory.Exists(legacy) && !Directory.Exists(modern)) Directory.Move(legacy, modern);
+    }
+    Console.WriteLine("LEGACY_TARGET_FALLBACK=PASS");
+}
+
+async Task VerifySha256Async()
+{
+    var fixture = await SeedAsync("sha256", "trunk", "branches", "tags", "sha256");
+    await ConfigureAsync(fixture.Local, new GitSvnTrackingPaths(fixture.Url, ["trunk"], ["branches"], ["tags"]));
+    var imported = await FindImportedRefAsync(fixture.Local, fixture.Url + "/trunk");
+    await GitAsync(fixture.Local, "checkout", "-b", "sha256-local", imported);
+    Require((await GitAsync(fixture.Local, "rev-parse", "HEAD")).Length == 64, "SHA-256 fixture has the wrong object format.");
+    await RequireTargetAsync(fixture.Local, fixture.Url + "/trunk");
+    Console.WriteLine("SHA256_TARGET_MATCHES_NATIVE=PASS");
 }
 
 async Task VerifyMigrationAsync()
@@ -259,7 +312,7 @@ async Task VerifyManagementFormAsync()
     Console.WriteLine("FORM_PARTIAL_FETCH_FAILURE_RECOVERY=PASS");
 }
 
-async Task<Fixture> SeedAsync(string name, string trunk, string branches, string tags)
+async Task<Fixture> SeedAsync(string name, string trunk, string branches, string tags, string? objectFormat = null)
 {
     var root = Path.Combine(fixtureRoot, name);
     Directory.CreateDirectory(root);
@@ -280,7 +333,8 @@ async Task<Fixture> SeedAsync(string name, string trunk, string branches, string
     var local = Path.Combine(root, "local");
     Directory.CreateDirectory(local);
     // Set identity only inside this disposable Git repository.
-    await GitAsync(local, "init");
+    if (objectFormat == null) await GitAsync(local, "init");
+    else await GitAsync(local, "init", "--object-format=" + objectFormat);
     // Assertions compare exact file bytes across stash/checkout, independently
     // of the host Git installation's global newline conversion defaults.
     await GitAsync(local, "config", "core.autocrlf", "false");
@@ -301,6 +355,12 @@ async Task RequireTargetAsync(string repository, string expected)
     Require(target.IsResolved, "Dcommit target was unresolved: " + target.Problem);
     Require(UrlEquals(target.Url!, expected), "Expected dcommit target " + expected + "; actual " + target.Url);
     Require(long.TryParse(target.Revision, out _), "The resolved SVN revision is missing or invalid");
+    var before = runner.UrlInfoCalls;
+    var inspected = await service.InspectAsync(repository, cancellation);
+    Require(inspected.SvnTargets.Count == 1 && UrlEquals(inspected.SvnTargets[0], target.Url!),
+        "Production local target lookup differs from the authoritative target: " + expected);
+    if (runner.UrlInfoCalls == before) directTargetReads++;
+    else fallbackTargetReads++;
     var actual = await GitAsync(repository, "svn", "info", "--url");
     Require(UrlEquals(actual, expected), "git-svn's actual history URL differs: " + actual);
 }
@@ -357,6 +417,17 @@ async Task<(bool Succeeded, string Output, string Error)> RunResultAsync(string 
 static bool UrlEquals(string left, string right) => Uri.UnescapeDataString(left.TrimEnd('/')) == Uri.UnescapeDataString(right.TrimEnd('/'));
 static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
 internal sealed record Fixture(string Root, string Local, string Url, string WorkingCopy);
+
+internal sealed class TargetProbeRunner(IGitCommandRunner inner) : IGitCommandRunner
+{
+    private int urlInfoCalls;
+    public int UrlInfoCalls => Volatile.Read(ref urlInfoCalls);
+    public Task<GitCommandResult> RunAsync(string directory, IReadOnlyList<string> arguments, CancellationToken token)
+    {
+        if (arguments.SequenceEqual(new[] { "svn", "info", "--url" })) Interlocked.Increment(ref urlInfoCalls);
+        return inner.RunAsync(directory, arguments, token);
+    }
+}
 
 internal sealed class LockedRefGitRunner(IGitCommandRunner inner) : IGitCommandRunner
 {

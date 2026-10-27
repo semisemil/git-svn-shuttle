@@ -21,7 +21,7 @@ internal sealed class GitSvnRebaseWorkflow
     {
         try
         {
-            var preflight = await reader.PreflightAsync(repositoryPath, requirePendingCommits: false, cancellationToken)
+            var preflight = await reader.PreflightAsync(repositoryPath, cancellationToken)
                 .ConfigureAwait(false);
             if (!preflight.Succeeded)
             {

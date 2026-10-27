@@ -394,7 +394,7 @@ internal sealed partial class GitSvnShuttleViewModel : INotifyPropertyChanged, I
         await RunBusyAsync(async () =>
         {
             if (reason == RepositoryRefreshReason.Automatic && IsPublishConfirmationOpen &&
-                await publishConfirmation.IsCurrentAsync(WorkspaceService.ValidatePublishSnapshotAsync, OperationToken))
+                await publishConfirmation.IsCurrentAsync(WorkspaceService.ValidatePublishSnapshotsAsync, OperationToken))
             {
                 return;
             }

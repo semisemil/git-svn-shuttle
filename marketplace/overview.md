@@ -12,7 +12,7 @@ Visual Studio에서 `git svn rebase`와 `git svn dcommit`을 실행하고, SVN�
 - 넓은 폭과 좁은 도구 창에 대응하는 반응형 저장소 테이블
 - 준비·재검증·게시 진행과 저장소별 결과 표시
 - 저장소별 `rebase`, `dcommit` 실행
-- 여러 저장소 순차 실행
+- 여러 저장소의 병렬 조회와 게시 준비, 순차 rebase와 dcommit
 - 커밋되지 않은 변경과 실행할 수 없는 저장소 상태 표시
 - `git svn rebase` 충돌 파일 표시와 계속·중단 복구
 - 정션으로 연결된 외부 하위 프로젝트의 Git-SVN 저장소 탐색
@@ -40,7 +40,7 @@ Visual Studio에서 `git svn rebase`와 `git svn dcommit`을 실행하고, SVN�
 
 ## dcommit 확인과 실행 보호
 
-확인 창에는 SVN 대상과 게시할 커밋 목록이 표시됩니다. 실행 전 `dcommit --dry-run`을 수행하고, 확인 시점의 HEAD, 게시 대상, SVN 기준점과 Git-SVN 설정이 그대로인지 다시 검사합니다. 상태가 달라졌다면 게시하지 않고 새 확인을 요구합니다.
+확인 창에는 SVN 대상과 게시할 커밋 목록이 표시됩니다. 사용자가 확정하면 작업 사본별로 `dcommit --dry-run`을 한 번 실행한 뒤, 확인 시점의 HEAD, 게시 대상, SVN 기준점과 Git-SVN 설정이 그대로인지 다시 검사합니다. 모든 대상이 검사를 통과해야 첫 게시를 시작하며, 각 대상의 게시 직전에도 상태를 확인합니다. 상태가 달라졌다면 게시하지 않고 새 확인을 요구합니다.
 
 **모두 게시**는 모든 저장소를 먼저 검사한 뒤 순서대로 실행하며, 하나가 실패하면 그 지점에서 멈춥니다. 앞에서 성공한 다른 저장소의 `dcommit`은 자동으로 되돌리지 않습니다.
 
@@ -60,6 +60,9 @@ Visual Studio에서 `git svn rebase`와 `git svn dcommit`을 실행하고, SVN�
 브랜치나 설정을 바꾼 뒤에는 **연결 다시 확인**으로 현재 브랜치의 실제 SVN 전송 주소를 확인할 수 있습니다.
 
 Git-SVN과 SVN 명령줄 클라이언트는 별도로 준비해야 합니다.
+
+Git for Windows 2.51.2의 시작 옵션 조회를 줄이는 [적용 및 복구 스크립트](https://github.com/semisemil/git-svn-shuttle/blob/main/tools/Set-GitSvnStartupOptimization.ps1)를 제공합니다.
+외부 Git 최적화는 이 스크립트로 별도 적용합니다.
 
 ## 개인정보 보호
 

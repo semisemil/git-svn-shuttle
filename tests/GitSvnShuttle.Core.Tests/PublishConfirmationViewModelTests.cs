@@ -79,10 +79,10 @@ public sealed class PublishConfirmationViewModelTests
         model.Prepare(new[] { Snapshot("b", "https://svn.test/b", "b1"), Snapshot("a", "https://svn.test/a", "a1") });
         var calls = new List<string>();
 
-        var current = await model.IsCurrentAsync((snapshot, _) =>
+        var current = await model.IsCurrentAsync((snapshots, _) =>
         {
-            calls.Add(snapshot.RepositoryName);
-            return Task.FromResult(new OperationResult(snapshot.RepositoryPath, snapshot.RepositoryName != "a", "check"));
+            calls.AddRange(snapshots.Select(snapshot => snapshot.RepositoryName));
+            return Task.FromResult(false);
         }, CancellationToken.None);
 
         Assert.False(current);
@@ -97,14 +97,14 @@ public sealed class PublishConfirmationViewModelTests
     {
         var model = new PublishConfirmationViewModel();
         model.Prepare(new[] { Snapshot("old", "https://svn.test/old", "old") });
-        var pending = new TaskCompletionSource<OperationResult>();
+        var pending = new TaskCompletionSource<bool>();
         var validation = model.IsCurrentAsync((_, _) => pending.Task, CancellationToken.None);
         model.Close();
         if (prepareAgain)
         {
             model.Prepare(new[] { Snapshot("new", "https://svn.test/new", "new") });
         }
-        pending.SetResult(new OperationResult("old", true, "matched"));
+        pending.SetResult(true);
 
         Assert.False(await validation);
         Assert.Equal(prepareAgain, model.IsPublishConfirmationOpen);
@@ -129,7 +129,7 @@ public sealed class PublishConfirmationViewModelTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => model.IsCurrentAsync((snapshot, _) =>
         {
             cancellation.Cancel();
-            return Task.FromResult(new OperationResult(snapshot.RepositoryPath, true, "matched"));
+            return Task.FromResult(true);
         }, cancellation.Token));
     }
 

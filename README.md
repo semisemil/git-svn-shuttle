@@ -13,7 +13,7 @@ It fills the gap left after Visual Studio's built-in Git UI has staged and commi
 - **SVN paths and branches** manages each repository's trunk, branch, and tag tracking paths, including old and new layouts together.
 - Create an SVN server branch from a specified source URL and revision, fetch it, and connect a local work branch.
 - Inspect the current branch's actual dcommit destination from its SVN history and transport configuration.
-- The solution root and nested Git-SVN repositories are discovered and processed sequentially.
+- The solution root and nested Git-SVN repositories are discovered together and processed in the displayed or selected order.
 - Loaded projects linked through directory junctions can resolve their external Git-SVN repository root without recursively scanning arbitrary junction targets.
 
 ## Current MVP
@@ -36,7 +36,16 @@ See [SVN paths, branches, and layout migration](docs/svn-paths-and-branches.md) 
 
 If `git svn rebase` stops on conflicts, the repository shows the unresolved files separately. Resolve and stage them with Visual Studio's Git tools, then continue the rebase from Git-SVN Shuttle, or explicitly confirm that you want to abort it.
 
-Before a rebase, the extension requires no uncommitted changes to tracked files and an attached branch. Before dcommit, it additionally rejects merge commits and runs `git svn dcommit --dry-run`. The confirmation records the exact HEAD, pending commit hashes, SVN baseline, and SVN configuration. Confirming revalidates that snapshot and runs dcommit only while the current branch still points to the confirmed HEAD; any mismatch aborts the operation. **Publish all** preflights every repository before publishing the first one, then stops at the first failure. SVN cannot make publishing across multiple repositories atomic, so earlier successful dcommits cannot be rolled back automatically.
+Before a rebase, the extension requires no uncommitted changes to tracked files and an attached branch.
+Publish preparation also rejects merge commits and records the exact HEAD, pending commit hashes, SVN baseline, destination, and SVN configuration for confirmation.
+After confirmation, each target's worktree, branch, HEAD and SVN configuration are checked before one `git svn dcommit --dry-run`.
+The complete snapshot is validated once after dry-run, and every target must pass before the first repository is published.
+Each repository's snapshot is checked again immediately before its dcommit; any mismatch stops publishing.
+Destination reads verify first-parent SVN metadata against the current tracking ref and its local revision map.
+Missing, ambiguous, rewritten, or legacy metadata falls back to `git svn info --url`; authorization does not cache the destination.
+Discovery reads, publish preparation, batch preflight, and automatic confirmation checks work on up to two distinct repositories at a time while preserving result order.
+Rebase and dcommit run one repository at a time, and publishing stops at the first failure.
+SVN cannot make publishing across multiple repositories atomic, so earlier successful dcommits cannot be rolled back automatically.
 
 Repository and Git metadata changes are monitored through debounced filesystem notifications. This keeps the UI current without periodic Git polling. While publish confirmation is open, notifications first trigger a local snapshot check: delayed or duplicate notifications keep the confirmation open when the prepared state still matches. A changed snapshot invalidates the confirmation. The snapshot validation before dcommit remains the final safety boundary even if a filesystem notification is delayed or lost.
 
@@ -79,6 +88,17 @@ The extension scans `PATH`, common Git for Windows locations, and common MSYS2 U
 - Clear the user-selected path and return to automatic discovery.
 
 A selected path is validated with both `git --version` and `git svn --version` before it is saved. The runtime panel can be reopened from the gear button in the command bar.
+
+For the verified Git for Windows 2.51.2 runtime, [Set-GitSvnStartupOptimization.ps1](tools/Set-GitSvnStartupOptimization.ps1) reduces Git-SVN startup queries for unset options:
+
+```powershell
+./tools/Set-GitSvnStartupOptimization.ps1 -GitRoot 'C:\Tools\GitSvnRuntime'
+```
+
+The patch reads configured option names once, then retains Git's existing value conversion and command-line precedence for configured options.
+It backs up the original script and rejects other source versions or local modifications.
+Pass `-Restore` to restore that backup.
+Select the patched runtime's `cmd/git.exe` in the runtime panel to use it in Visual Studio.
 
 For scripted or managed setup, `GIT_SVN_SHUTTLE_GIT` remains available as an advanced override:
 
@@ -123,6 +143,10 @@ To update Visual Studio Marketplace, download the `vsix` artifact from a success
 ## Code structure
 
 `GitSvnWorkspaceService` delegates discovery, repository reads, rebase, publishing, tracking configuration, branch creation, and destination resolution to dedicated components. The VSIX separates repository rows, publish confirmation state, operation outcomes, and Output logging from the main view model. See [the refactoring notes](docs/refactoring.md) for responsibility ownership and verification coverage.
+
+`RepositoryBatch` bounds independent repository reads and preflight work to two concurrent operations.
+`GitRepositoryReader` retains each repository's latest baseline display record while its commit hash is unchanged.
+Publish validation reads mutable state and the actual SVN destination again at each validation point.
 
 ## Privacy and license
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using static GitSvnShuttle.Core.GitOperationResults;
@@ -17,24 +18,9 @@ internal sealed class GitSvnPublishWorkflow
         this.validator = validator;
     }
 
-    internal async Task<PublishPreparationResult> PrepareDcommitAsync(
+    internal Task<PublishPreparationResult> PrepareDcommitAsync(
         string repositoryPath,
-        CancellationToken cancellationToken)
-    {
-        var snapshot = await validator.CapturePublishSnapshotAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        if (snapshot == null)
-        {
-            return PreparationFailed(repositoryPath, "게시할 저장소 상태를 고정하지 못했습니다.");
-        }
-
-        var validation = await validator.ValidatePreparedSnapshotAsync(snapshot, runDryRun: true, cancellationToken)
-            .ConfigureAwait(false);
-        return validation.Succeeded
-            ? new PublishPreparationResult(
-                new OperationResult(repositoryPath, true, "게시 전 확인 완료"),
-                snapshot)
-            : new PublishPreparationResult(validation, null);
-    }
+        CancellationToken cancellationToken) => validator.PrepareSnapshotAsync(repositoryPath, cancellationToken);
 
     internal async Task<PublishBatchPreparationResult> PrepareDcommitAllAsync(
         IReadOnlyList<string> repositoryPaths,
@@ -46,8 +32,7 @@ internal sealed class GitSvnPublishWorkflow
             throw new ArgumentNullException(nameof(repositoryPaths));
         }
 
-        var snapshots = new List<GitSvnPublishSnapshot>();
-        for (var index = 0; index < repositoryPaths.Count; index++)
+        var preparations = await RepositoryBatch.RunAsync(repositoryPaths, async index =>
         {
             var repositoryPath = repositoryPaths[index];
             progress?.Report(new PublishProgress(
@@ -56,7 +41,12 @@ internal sealed class GitSvnPublishWorkflow
                 repositoryPath,
                 index,
                 repositoryPaths.Count));
-            var preparation = await PrepareDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+            return await PrepareDcommitAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        }, preparation => preparation.Succeeded).ConfigureAwait(false);
+
+        var snapshots = new List<GitSvnPublishSnapshot>();
+        foreach (var preparation in preparations)
+        {
             if (!preparation.Succeeded)
             {
                 return new PublishBatchPreparationResult(
@@ -86,6 +76,18 @@ internal sealed class GitSvnPublishWorkflow
         // without another git-svn dry run, which could produce more notifications.
         return await validator.ValidatePreparedSnapshotAsync(snapshot, runDryRun: false, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    internal async Task<bool> ValidatePublishSnapshotsAsync(
+        IReadOnlyList<GitSvnPublishSnapshot> snapshots,
+        CancellationToken cancellationToken)
+    {
+        if (snapshots == null) throw new ArgumentNullException(nameof(snapshots));
+        var results = await RepositoryBatch.RunAsync(
+            snapshots.Select(snapshot => snapshot.RepositoryPath).ToArray(),
+            index => ValidatePublishSnapshotAsync(snapshots[index], cancellationToken),
+            result => result.Succeeded).ConfigureAwait(false);
+        return results.Count == snapshots.Count && results.All(result => result.Succeeded);
     }
 
     internal async Task<OperationResult> DcommitPreparedAsync(
@@ -125,11 +127,12 @@ internal sealed class GitSvnPublishWorkflow
 
         var results = new List<OperationResult>();
 
-        // Nothing is published until every confirmed snapshot still passes its dry run.
-        foreach (var snapshot in snapshots)
+        var validations = await RepositoryBatch.RunAsync(
+            snapshots.Select(snapshot => snapshot.RepositoryPath).ToArray(),
+            index => validator.ValidatePreparedSnapshotAsync(snapshots[index], runDryRun: true, cancellationToken),
+            result => result.Succeeded).ConfigureAwait(false);
+        foreach (var validation in validations)
         {
-            var validation = await validator.ValidatePreparedSnapshotAsync(snapshot, runDryRun: true, cancellationToken)
-                .ConfigureAwait(false);
             if (!validation.Succeeded)
             {
                 results.Add(validation);
@@ -172,20 +175,36 @@ internal sealed class GitSvnPublishWorkflow
         var activeIndex = -1;
         try
         {
-            // Preserve the all-dry-runs-before-any-publish protection from DcommitPreparedAllAsync.
-            for (var index = 0; index < snapshots.Count; index++)
-            {
-                activeIndex = index;
-                var snapshot = snapshots[index];
-                ReportPublishProgress(progress, PublishProgressPhase.Revalidating, snapshot, index, snapshots.Count);
-                var validation = await validator.ValidatePreparedSnapshotAsync(
-                        snapshot,
-                        runDryRun: true,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (!validation.Succeeded)
+            var validations = await RepositoryBatch.RunAsync(
+                snapshots.Select(snapshot => snapshot.RepositoryPath).ToArray(),
+                async index =>
                 {
-                    outcomes[index] = ToPublishOutcome(snapshot, PublishOutcomeKind.Failed, validation.Message);
+                    var snapshot = snapshots[index];
+                    try
+                    {
+                        ReportPublishProgress(progress, PublishProgressPhase.Revalidating, snapshot, index, snapshots.Count);
+                        var validation = await validator.ValidatePreparedSnapshotAsync(
+                            snapshot, runDryRun: true, cancellationToken).ConfigureAwait(false);
+                        return ToPublishOutcome(snapshot,
+                            validation.Succeeded ? PublishOutcomeKind.Succeeded : PublishOutcomeKind.Failed,
+                            validation.Message);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        return ToPublishOutcome(snapshot, PublishOutcomeKind.Cancelled, "사용자가 현재 게시 작업을 취소했습니다.");
+                    }
+                    catch (Exception exception)
+                    {
+                        return ToPublishOutcome(snapshot, PublishOutcomeKind.Failed,
+                            "게시 작업을 완료하지 못했습니다: " + exception.Message);
+                    }
+                },
+                result => result.Kind == PublishOutcomeKind.Succeeded).ConfigureAwait(false);
+            for (var index = 0; index < validations.Count; index++)
+            {
+                if (validations[index].Kind != PublishOutcomeKind.Succeeded)
+                {
+                    outcomes[index] = validations[index];
                     return CompletePublishOutcomes(snapshots, outcomes);
                 }
             }
@@ -313,6 +332,4 @@ internal sealed class GitSvnPublishWorkflow
         return ToOperationResult(snapshot.RepositoryPath, "SVN에 게시", result);
     }
 
-    private static PublishPreparationResult PreparationFailed(string path, string message) =>
-        new PublishPreparationResult(Failed(path, message), null);
 }

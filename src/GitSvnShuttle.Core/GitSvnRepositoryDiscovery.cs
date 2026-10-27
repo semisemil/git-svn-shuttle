@@ -61,10 +61,11 @@ internal sealed class GitSvnRepositoryDiscovery
             }
         }
 
-        var repositories = new List<GitSvnRepository>();
-
-        foreach (var candidate in candidates)
+        var repositories = await RepositoryBatch.RunAsync(
+            candidates.Select(candidate => candidate.Path).ToArray(),
+            async index =>
         {
+            var candidate = candidates[index];
             cancellationToken.ThrowIfCancellationRequested();
             var config = await runner.RunAsync(
                 candidate.Path,
@@ -73,16 +74,14 @@ internal sealed class GitSvnRepositoryDiscovery
 
             if (!config.Succeeded || string.IsNullOrWhiteSpace(config.StandardOutput))
             {
-                continue;
+                return null;
             }
 
             var inspected = await reader.InspectAsync(candidate.Path, cancellationToken).ConfigureAwait(false);
-            repositories.Add(WithDiscoveryContext(
-                inspected,
-                candidate));
-        }
+            return WithDiscoveryContext(inspected, candidate);
+        }).ConfigureAwait(false);
 
-        return repositories;
+        return repositories.Where(repository => repository != null).Select(repository => repository!).ToArray();
     }
 
     private static RepositoryCandidate? FindExternalLinkedRepository(

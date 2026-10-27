@@ -13,27 +13,51 @@ internal sealed class GitSvnTargetResolver
 
     internal GitSvnTargetResolver(IGitCommandRunner runner) => this.runner = runner;
 
-    internal async Task<GitSvnDcommitTarget> ResolveAsync(string repositoryPath, CancellationToken cancellationToken)
+    internal Task<GitSvnDcommitTarget> ResolveAsync(string repositoryPath, CancellationToken cancellationToken) =>
+        ResolveAsync(repositoryPath, null, includeRevision: true, cancellationToken);
+
+    internal async Task<GitSvnDcommitTarget> ResolveUrlAsync(
+        string repositoryPath,
+        string? configuration,
+        CancellationToken cancellationToken)
+    {
+        var local = await new GitSvnLocalTargetReader(runner)
+            .TryResolveAsync(repositoryPath, configuration, cancellationToken).ConfigureAwait(false);
+        return local ?? await ResolveAsync(repositoryPath, configuration, includeRevision: false, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<GitSvnDcommitTarget> ResolveAsync(
+        string repositoryPath,
+        string? configuration,
+        bool includeRevision,
+        CancellationToken cancellationToken)
     {
         // git-svn validates first-parent metadata against its revision map. A local
         // branch name, an upstream Git branch, or a trailer alone cannot do this.
-        var info = await runner.RunAsync(repositoryPath, new[] { "svn", "info" }, cancellationToken)
+        var info = await runner.RunAsync(repositoryPath,
+                includeRevision ? new[] { "svn", "info" } : new[] { "svn", "info", "--url" }, cancellationToken)
             .ConfigureAwait(false);
-        var svnUrl = InfoValue(info.StandardOutput, "URL");
-        var revision = InfoValue(info.StandardOutput, "Revision");
+        var svnUrl = includeRevision ? InfoValue(info.StandardOutput, "URL") : info.StandardOutput.Trim();
+        var revision = includeRevision ? InfoValue(info.StandardOutput, "Revision") : null;
         if (!info.Succeeded || svnUrl == null || !IsSvnUrl(svnUrl))
         {
             return Unresolved(null, "현재 HEAD의 git-svn 추적 이력을 확인하지 못했습니다: " + info.CombinedOutput);
         }
 
-        var config = await runner.RunAsync(repositoryPath,
-            new[] { "config", "--get-regexp", "^(svn\\.|svn-remote\\.)" }, cancellationToken).ConfigureAwait(false);
-        if (!config.Succeeded)
+        if (configuration == null)
         {
-            return Unresolved(svnUrl, "SVN 전송 설정을 읽지 못했습니다.");
+            var config = await runner.RunAsync(repositoryPath,
+                new[] { "config", "--get-regexp", "^(svn\\.|svn-remote\\.)" }, cancellationToken).ConfigureAwait(false);
+            if (!config.Succeeded)
+            {
+                return Unresolved(svnUrl, "SVN 전송 설정을 읽지 못했습니다.");
+            }
+
+            configuration = config.StandardOutput;
         }
 
-        var resolved = ResolveConfiguration(svnUrl, config.StandardOutput);
+        var resolved = ResolveConfiguration(svnUrl, configuration);
         return new GitSvnDcommitTarget(resolved.Url, resolved.SvnUrl, resolved.RemoteName, resolved.RemoteRef, revision, resolved.Problem);
     }
 

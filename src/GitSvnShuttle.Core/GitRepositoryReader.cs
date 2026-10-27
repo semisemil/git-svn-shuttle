@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -11,6 +12,8 @@ namespace GitSvnShuttle.Core;
 internal sealed class GitRepositoryReader
 {
     private readonly IGitCommandRunner runner;
+    private readonly ConcurrentDictionary<string, GitSvnCommit> baselineCommits =
+        new ConcurrentDictionary<string, GitSvnCommit>(StringComparer.OrdinalIgnoreCase);
 
     internal GitRepositoryReader(IGitCommandRunner runner)
     {
@@ -85,7 +88,8 @@ internal sealed class GitRepositoryReader
         var problem = string.IsNullOrWhiteSpace(status.StandardOutput)
             ? null
             : "커밋되지 않은 변경이 있습니다.";
-        var target = await new GitSvnTargetResolver(runner).ResolveAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        var target = await new GitSvnTargetResolver(runner)
+            .ResolveUrlAsync(repositoryPath, null, cancellationToken).ConfigureAwait(false);
 
         return new GitSvnRepository(
             GetRepositoryName(repositoryPath),
@@ -99,7 +103,6 @@ internal sealed class GitRepositoryReader
 
     internal async Task<OperationResult> PreflightAsync(
         string repositoryPath,
-        bool requirePendingCommits,
         CancellationToken cancellationToken)
     {
         var status = await runner.RunAsync(
@@ -137,26 +140,7 @@ internal sealed class GitRepositoryReader
             return Failed(repositoryPath, "detached HEAD 상태에서는 실행할 수 없습니다.");
         }
 
-        if (requirePendingCommits)
-        {
-            var commits = await GetPendingCommitsAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-            if (commits.Count == 0)
-            {
-                return Failed(repositoryPath, "SVN에 게시할 로컬 커밋이 없습니다.");
-            }
-        }
-
         return new OperationResult(repositoryPath, true, "사전 검사 통과");
-    }
-
-    private async Task<IReadOnlyList<GitSvnCommit>> GetPendingCommitsAsync(
-        string repositoryPath,
-        CancellationToken cancellationToken)
-    {
-        var baseline = await FindSvnBaselineAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        return baseline == null
-            ? Array.Empty<GitSvnCommit>()
-            : await GetPendingCommitsAsync(repositoryPath, baseline, cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task<IReadOnlyList<GitSvnCommit>> GetPendingCommitsAsync(
@@ -187,6 +171,12 @@ internal sealed class GitRepositoryReader
         string revision,
         CancellationToken cancellationToken)
     {
+        if (baselineCommits.TryGetValue(repositoryPath, out var cached) &&
+            string.Equals(cached.Hash, revision, StringComparison.OrdinalIgnoreCase))
+        {
+            return cached;
+        }
+
         var log = await runner.RunAsync(
             repositoryPath,
             new[]
@@ -200,7 +190,13 @@ internal sealed class GitRepositoryReader
             },
             cancellationToken).ConfigureAwait(false);
 
-        return log.Succeeded ? ParseCommits(log.StandardOutput).SingleOrDefault() : null;
+        var commit = log.Succeeded ? ParseCommits(log.StandardOutput).SingleOrDefault() : null;
+        if (commit != null)
+        {
+            baselineCommits[repositoryPath] = commit;
+        }
+
+        return commit;
     }
 
     private static IReadOnlyList<GitSvnCommit> ParseCommits(string output)
