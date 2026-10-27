@@ -17,7 +17,7 @@ public sealed class GitSvnWorkspaceServiceTests
         runner.Enqueue(output:
             "def456\u001fdef456\u001fKim\u001f2026-08-07\u001fFix shuttle" + Environment.NewLine +
             "new789\u001fnew789\u001fKim\u001f2026-08-08\u001fPolish shuttle");
-        runner.Enqueue(output: "URL: https://svn.example.test/demo/trunk\nRevision: 42");
+        runner.Enqueue(output: "https://svn.example.test/demo/trunk");
         runner.Enqueue(output:
             "svn-remote.svn.url https://svn.example.test/demo/trunk\n" +
             "svn-remote.svn.fetch :refs/remotes/git-svn");
@@ -58,6 +58,7 @@ public sealed class GitSvnWorkspaceServiceTests
 
         Assert.False(result.Succeeded);
         Assert.Contains("변경되었습니다", result.Message);
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments == "svn dcommit --dry-run");
         Assert.DoesNotContain(runner.Calls, IsActualDcommit);
     }
 
@@ -84,6 +85,7 @@ public sealed class GitSvnWorkspaceServiceTests
 
         Assert.False(result.Succeeded);
         Assert.Contains("SVN 설정이 변경", result.Message);
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments == "svn dcommit --dry-run");
         Assert.DoesNotContain(runner.Calls, IsActualDcommit);
     }
 
@@ -96,7 +98,7 @@ public sealed class GitSvnWorkspaceServiceTests
         var responder = runner.Responder!;
         runner.Responder = (path, arguments) => arguments switch
         {
-            "svn info" => Success("URL: " + target + "\nRevision: 42"),
+            "svn info --url" => Success(target),
             "config --get-regexp ^(svn\\.|svn-remote\\.)" => Success(
                 "svn-remote.svn.url https://svn.example.test/project\n" +
                 "svn-remote.svn.branches branches/*:refs/remotes/svn/*"),
@@ -196,7 +198,7 @@ public sealed class GitSvnWorkspaceServiceTests
         var runner = CreateRepositoryRunner(heads);
         var successResponder = runner.Responder!;
         runner.Responder = (repository, arguments) =>
-            repository == repositoryB && arguments == "svn dcommit --dry-run"
+            repository == repositoryB && arguments == "--no-optional-locks status --porcelain=v1 --untracked-files=no"
                 ? new GitCommandResult(1, string.Empty, "preparation failed")
                 : successResponder(repository, arguments);
         var service = new GitSvnWorkspaceService(runner);
@@ -698,9 +700,18 @@ public sealed class GitSvnWorkspaceServiceTests
         Assert.True(preparation.Succeeded);
         runner.Calls.Clear();
         var responder = runner.Responder!;
-        runner.Responder = (repository, arguments) => repository == second && arguments == "svn dcommit --dry-run"
-            ? new GitCommandResult(1, string.Empty, "dry-run failed")
-            : responder(repository, arguments);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var bothStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+        runner.AsyncResponder = async (repository, arguments, token) =>
+        {
+            if (arguments != "svn dcommit --dry-run") return responder(repository, arguments);
+            if (Interlocked.Increment(ref started) == 2) bothStarted.TrySetResult(true);
+            await bothStarted.Task.WaitAsync(deadline.Token);
+            return repository == second
+                ? new GitCommandResult(1, string.Empty, "dry-run failed")
+                : responder(repository, arguments);
+        };
 
         if (detailedResult)
         {
@@ -715,6 +726,51 @@ public sealed class GitSvnWorkspaceServiceTests
             Assert.Equal(second, results[0].RepositoryPath);
         }
 
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PreparedBatch_RejectsTargetChangedDuringDryRunBeforeAnyPublish(bool detailedResult)
+    {
+        var paths = new[] { @"C:\work\a", @"C:\work\b" };
+        var runner = CreateRepositoryRunner(paths.ToDictionary(path => path, _ => "confirmed"));
+        var respond = runner.Responder!;
+        var targets = paths.ToDictionary(path => path, _ => "https://svn.example.test/project/branches/first");
+        runner.Responder = (path, command) => command switch
+        {
+            "svn info --url" => Success(targets[path]),
+            "config --get-regexp ^(svn\\.|svn-remote\\.)" => Success(
+                "svn-remote.svn.url https://svn.example.test/project\n" +
+                "svn-remote.svn.branches branches/*:refs/remotes/svn/*"),
+            _ => respond(path, command),
+        };
+        var service = new GitSvnWorkspaceService(runner);
+        var prepared = await service.PrepareDcommitAllAsync(paths, CancellationToken.None);
+        Assert.True(prepared.Succeeded);
+        runner.Calls.Clear();
+        var preparedResponder = runner.Responder;
+        runner.Responder = (path, command) =>
+        {
+            var result = preparedResponder!(path, command);
+            if (path == paths[1] && command == "svn dcommit --dry-run")
+                targets[path] = "https://svn.example.test/project/branches/second";
+            return result;
+        };
+
+        if (detailedResult)
+        {
+            var result = await service.DcommitPreparedBatchAsync(prepared.Snapshots, null, CancellationToken.None);
+            Assert.False(result.Succeeded);
+        }
+        else
+        {
+            var results = await service.DcommitPreparedAllAsync(prepared.Snapshots, CancellationToken.None);
+            Assert.False(Assert.Single(results).Succeeded);
+        }
+
+        Assert.Equal(2, runner.Calls.Count(call => call.Arguments == "svn dcommit --dry-run"));
         Assert.DoesNotContain(runner.Calls, IsActualDcommit);
     }
 
@@ -757,7 +813,8 @@ public sealed class GitSvnWorkspaceServiceTests
 
         Assert.True(result.Succeeded);
         Assert.Single(runner.Calls, IsActualDcommit);
-        Assert.Equal(2, runner.Calls.Count(call => call.Arguments == "svn dcommit --dry-run"));
+        Assert.Single(runner.Calls, call => call.Arguments == "svn dcommit --dry-run");
+        Assert.Equal(3, runner.Calls.Count(call => call.Arguments == "svn info --url"));
         Assert.True(runner.Calls.FindIndex(IsActualDcommit) >
             runner.Calls.FindLastIndex(call => call.Arguments == "svn dcommit --dry-run"));
     }
@@ -826,14 +883,14 @@ public sealed class GitSvnWorkspaceServiceTests
         runner.Calls.Clear();
 
         // Two delayed/duplicate notifications arrive after the latest preparation opened the dialog.
-        Assert.True(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotAsync, CancellationToken.None));
-        Assert.True(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotAsync, CancellationToken.None));
+        Assert.True(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotsAsync, CancellationToken.None));
+        Assert.True(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotsAsync, CancellationToken.None));
 
         Assert.True(confirmation.IsPublishConfirmationOpen);
         Assert.Equal(new[] { "old", "new" }, confirmation.PendingPublishItems.Select(item => item.ShortHash));
         Assert.Same(preparation.Snapshot, Assert.Single(confirmation.TakeSnapshots()));
         Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal) &&
-            call.Arguments != "svn info");
+            call.Arguments != "svn info --url");
     }
 
     [Theory]
@@ -868,9 +925,9 @@ public sealed class GitSvnWorkspaceServiceTests
             _ => responder(repository, arguments),
         };
 
-        Assert.False(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotAsync, CancellationToken.None));
+        Assert.False(await confirmation.IsCurrentAsync(service.ValidatePublishSnapshotsAsync, CancellationToken.None));
         Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn ", StringComparison.Ordinal) &&
-            call.Arguments != "svn info");
+            call.Arguments != "svn info --url");
     }
 
     [Fact]
@@ -890,6 +947,124 @@ public sealed class GitSvnWorkspaceServiceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             service.ValidatePublishSnapshotAsync(preparation.Snapshot!, cancellation.Token));
         Assert.Empty(runner.Calls);
+    }
+
+    [Fact]
+    public async Task PrepareDcommitAll_OverlapsTwoRepositoriesAndPreservesSelectionOrder()
+    {
+        var paths = new[] { @"C:\work\b", @"C:\work\a", @"C:\work\c" };
+        var runner = CreateRepositoryRunner(paths.ToDictionary(path => path, _ => "local"));
+        var respond = runner.Responder!;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var firstPairStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+        runner.AsyncResponder = async (path, command, token) =>
+        {
+            if (command == "svn info --url")
+            {
+                if (Interlocked.Increment(ref started) == 2) firstPairStarted.TrySetResult(true);
+                await release.Task.WaitAsync(token);
+            }
+
+            return respond(path, command);
+        };
+        var service = new GitSvnWorkspaceService(runner);
+        var operation = service.PrepareDcommitAllAsync(paths, deadline.Token);
+        try
+        {
+            await firstPairStarted.Task.WaitAsync(deadline.Token);
+            Assert.Equal(2, Volatile.Read(ref started));
+        }
+        finally
+        {
+            release.TrySetResult(true);
+        }
+
+        var prepared = await operation;
+        Assert.True(prepared.Succeeded);
+        Assert.Equal(paths, prepared.Snapshots.Select(snapshot => snapshot.RepositoryPath));
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments == "svn dcommit --dry-run");
+        Assert.DoesNotContain(runner.Calls, IsActualDcommit);
+    }
+
+    [Fact]
+    public async Task PrepareDcommitAll_DoesNotOverlapTheSameRepository()
+    {
+        const string path = @"C:\work\same";
+        var runner = CreateRepositoryRunner(new Dictionary<string, string> { [path] = "local" });
+        var respond = runner.Responder!;
+        var gate = new object();
+        var active = 0;
+        var maximum = 0;
+        runner.AsyncResponder = async (repository, command, token) =>
+        {
+            if (command != "svn info --url") return respond(repository, command);
+            lock (gate) { maximum = Math.Max(maximum, ++active); }
+            try { await Task.Delay(20, token); }
+            finally { lock (gate) { active--; } }
+            return respond(repository, command);
+        };
+
+        var prepared = await new GitSvnWorkspaceService(runner)
+            .PrepareDcommitAllAsync(new[] { path, path }, CancellationToken.None);
+
+        Assert.True(prepared.Succeeded);
+        Assert.Equal(2, prepared.Snapshots.Count);
+        Assert.Equal(1, maximum);
+    }
+
+    [Fact]
+    public async Task ValidatePublishSnapshots_OverlapsTwoChecksAndDoesNotRunDryRun()
+    {
+        var paths = new[] { @"C:\work\b", @"C:\work\a", @"C:\work\c" };
+        var runner = CreateRepositoryRunner(paths.ToDictionary(path => path, _ => "confirmed"));
+        var service = new GitSvnWorkspaceService(runner);
+        var prepared = await service.PrepareDcommitAllAsync(paths, CancellationToken.None);
+        Assert.True(prepared.Succeeded);
+        runner.Calls.Clear();
+        var respond = runner.Responder!;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var firstPair = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+        runner.AsyncResponder = async (path, command, token) =>
+        {
+            if (command == "rev-parse --verify HEAD")
+            {
+                if (Interlocked.Increment(ref started) == 2) firstPair.TrySetResult(true);
+                await release.Task.WaitAsync(token);
+            }
+            return respond(path, command);
+        };
+        var validation = service.ValidatePublishSnapshotsAsync(prepared.Snapshots, deadline.Token);
+        try
+        {
+            await firstPair.Task.WaitAsync(deadline.Token);
+            Assert.Equal(2, Volatile.Read(ref started));
+        }
+        finally { release.TrySetResult(true); }
+
+        Assert.True(await validation);
+        Assert.DoesNotContain(runner.Calls, call => call.Arguments.StartsWith("svn dcommit", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Inspect_CachesBaselineDisplayButRefreshesTheSvnTarget()
+    {
+        const string path = @"C:\work\a";
+        var targets = new Dictionary<string, string> { [path] = "https://svn.test/trunk" };
+        var runner = CreateRepositoryRunner(new Dictionary<string, string> { [path] = "local" }, targets);
+        var service = new GitSvnWorkspaceService(runner);
+        var first = await service.InspectAsync(path, CancellationToken.None);
+        targets[path] = "https://svn.test/branches/changed";
+        var second = await service.InspectAsync(path, CancellationToken.None);
+
+        Assert.Equal("Baseline", first.SvnBaseline!.Subject);
+        Assert.Equal("Baseline", second.SvnBaseline!.Subject);
+        Assert.Equal(new[] { targets[path] }, second.SvnTargets);
+        Assert.Single(runner.Calls, call => call.Arguments.StartsWith("show -s ", StringComparison.Ordinal));
+        Assert.Equal(2, runner.Calls.Count(call => call.Arguments == "svn info --url"));
     }
 
     private static FakeGitCommandRunner CreateRepositoryRunner(
@@ -919,14 +1094,19 @@ public sealed class GitSvnWorkspaceServiceTests
                 return Success(head + "\u001f" + head + "\u001fKim\u001f2026-08-07\u001fCommit " + head);
             }
 
+            if (arguments.StartsWith("show -s ", StringComparison.Ordinal))
+            {
+                return Success("base\u001fbase\u001fSVN\u001f2026-08-07\u001fBaseline");
+            }
+
             if (arguments == "config --get-regexp ^(svn\\.|svn-remote\\.)")
             {
                 return Success("svn-remote.svn.url " + target + "\nsvn-remote.svn.fetch :refs/remotes/git-svn");
             }
 
-            if (arguments == "svn info")
+            if (arguments == "svn info --url")
             {
-                return Success("URL: " + target + "\nRevision: 42");
+                return Success(target);
             }
 
             if (arguments == "rev-parse --git-dir")

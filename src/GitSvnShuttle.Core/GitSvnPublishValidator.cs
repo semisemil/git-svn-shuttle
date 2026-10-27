@@ -23,112 +23,133 @@ internal sealed class GitSvnPublishValidator
         bool runDryRun,
         CancellationToken cancellationToken)
     {
-        var rules = await ValidateDcommitRulesAsync(expected.RepositoryPath, cancellationToken).ConfigureAwait(false);
-        if (!rules.Succeeded)
+        if (runDryRun)
         {
-            return rules;
-        }
+            var inputs = await CheckDryRunInputsAsync(expected, cancellationToken).ConfigureAwait(false);
+            if (!inputs.Succeeded)
+            {
+                return inputs;
+            }
 
-        var current = await CapturePublishSnapshotAsync(expected.RepositoryPath, cancellationToken).ConfigureAwait(false);
-        if (current == null || !PublishSnapshotsMatch(expected, current))
-        {
-            return SnapshotChanged(expected.RepositoryPath);
-        }
-
-        if (!runDryRun)
-        {
-            return new OperationResult(expected.RepositoryPath, true, "확인한 게시 상태와 일치합니다.");
-        }
-
-        var dryRun = await runner.RunAsync(
-            expected.RepositoryPath,
-            new[] { "svn", "dcommit", "--dry-run" },
-            cancellationToken).ConfigureAwait(false);
-        if (!dryRun.Succeeded)
-        {
-            return Failed(
+            var dryRun = await runner.RunAsync(
                 expected.RepositoryPath,
-                "dcommit 사전 검사가 실패했습니다: " + dryRun.CombinedOutput);
+                new[] { "svn", "dcommit", "--dry-run" },
+                cancellationToken).ConfigureAwait(false);
+            if (!dryRun.Succeeded)
+            {
+                return Failed(
+                    expected.RepositoryPath,
+                    "dcommit 사전 검사가 실패했습니다: " + dryRun.CombinedOutput);
+            }
         }
 
-        var afterDryRun = await CapturePublishSnapshotAsync(expected.RepositoryPath, cancellationToken).ConfigureAwait(false);
-        return afterDryRun != null && PublishSnapshotsMatch(expected, afterDryRun)
-            ? new OperationResult(expected.RepositoryPath, true, "사전 검사 통과")
-            : SnapshotChanged(expected.RepositoryPath);
+        // Full validation after dry-run also checks changes made during the run.
+        var preparation = await PrepareSnapshotAsync(expected.RepositoryPath, cancellationToken, expected).ConfigureAwait(false);
+        return preparation.Succeeded
+            ? new OperationResult(expected.RepositoryPath, true,
+                runDryRun ? "사전 검사 통과" : "확인한 게시 상태와 일치합니다.")
+            : preparation.Outcome;
     }
 
-    private async Task<OperationResult> ValidateDcommitRulesAsync(
-        string repositoryPath,
+    private async Task<OperationResult> CheckDryRunInputsAsync(
+        GitSvnPublishSnapshot expected,
         CancellationToken cancellationToken)
     {
-        var preflight = await reader.PreflightAsync(repositoryPath, requirePendingCommits: true, cancellationToken)
-            .ConfigureAwait(false);
+        var preflight = await reader.PreflightAsync(expected.RepositoryPath, cancellationToken).ConfigureAwait(false);
         if (!preflight.Succeeded)
         {
             return preflight;
         }
 
-        var baseline = await reader.FindSvnBaselineAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        if (baseline == null)
+        var headTask = runner.RunAsync(
+            expected.RepositoryPath,
+            new[] { "rev-parse", "--verify", "HEAD" },
+            cancellationToken);
+        var configTask = runner.RunAsync(
+            expected.RepositoryPath,
+            new[] { "config", "--get-regexp", "^(svn\\.|svn-remote\\.)" },
+            cancellationToken);
+        await Task.WhenAll(headTask, configTask).ConfigureAwait(false);
+        var head = GitRepositoryReader.FirstOutputLine(await headTask.ConfigureAwait(false));
+        var config = await configTask.ConfigureAwait(false);
+        if (!string.Equals(expected.HeadHash, head, StringComparison.OrdinalIgnoreCase) ||
+            !config.Succeeded ||
+            !string.Equals(expected.SvnConfigurationFingerprint,
+                SvnConfiguration.ComputeFingerprint(config.StandardOutput), StringComparison.Ordinal))
         {
-            return Failed(repositoryPath, "마지막 git-svn-id 커밋을 찾지 못했습니다.");
+            return SnapshotChanged(expected.RepositoryPath);
+        }
+
+        return new OperationResult(expected.RepositoryPath, true, "dry-run 입력 확인 완료");
+    }
+
+    internal async Task<PublishPreparationResult> PrepareSnapshotAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken,
+        GitSvnPublishSnapshot? expected = null)
+    {
+        var preflight = await reader.PreflightAsync(repositoryPath, cancellationToken)
+            .ConfigureAwait(false);
+        if (!preflight.Succeeded)
+        {
+            return new PublishPreparationResult(preflight, null);
+        }
+
+        var snapshot = await CapturePublishSnapshotAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        if (snapshot == null || (expected != null && !PublishSnapshotsMatch(expected, snapshot)))
+        {
+            return new PublishPreparationResult(
+                expected == null
+                    ? Failed(repositoryPath, "게시할 저장소 상태를 고정하지 못했습니다.")
+                    : SnapshotChanged(repositoryPath),
+                null);
         }
 
         var merges = await runner.RunAsync(
             repositoryPath,
-            new[] { "log", "--merges", "--format=%H", baseline + "..HEAD" },
+            new[] { "log", "--merges", "--format=%H", snapshot.BaselineHash + "..HEAD" },
             cancellationToken).ConfigureAwait(false);
         if (!merges.Succeeded || !string.IsNullOrWhiteSpace(merges.StandardOutput))
         {
-            return Failed(repositoryPath, "게시 범위에 merge commit이 있습니다.");
+            return new PublishPreparationResult(Failed(repositoryPath, "게시 범위에 merge commit이 있습니다."), null);
         }
 
-        return new OperationResult(repositoryPath, true, "게시 규칙 검사 통과");
+        return new PublishPreparationResult(new OperationResult(repositoryPath, true, "게시 전 확인 완료"), snapshot);
     }
 
-    internal async Task<GitSvnPublishSnapshot?> CapturePublishSnapshotAsync(
+    private async Task<GitSvnPublishSnapshot?> CapturePublishSnapshotAsync(
         string repositoryPath,
         CancellationToken cancellationToken)
     {
-        var headResult = await runner.RunAsync(
+        var headTask = runner.RunAsync(
             repositoryPath,
             new[] { "rev-parse", "--verify", "HEAD" },
-            cancellationToken).ConfigureAwait(false);
-        var head = GitRepositoryReader.FirstOutputLine(headResult);
-        if (head == null)
-        {
-            return null;
-        }
-
-        var baseline = await reader.FindSvnBaselineAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        if (baseline == null)
-        {
-            return null;
-        }
-
-        var commits = await reader.GetPendingCommitsAsync(repositoryPath, baseline, cancellationToken).ConfigureAwait(false);
-        if (commits.Count == 0)
-        {
-            return null;
-        }
-
-        var configResult = await runner.RunAsync(
+            cancellationToken);
+        var baselineTask = reader.FindSvnBaselineAsync(repositoryPath, cancellationToken);
+        var configTask = runner.RunAsync(
             repositoryPath,
             new[] { "config", "--get-regexp", "^(svn\\.|svn-remote\\.)" },
-            cancellationToken).ConfigureAwait(false);
-        if (!configResult.Succeeded || string.IsNullOrWhiteSpace(configResult.StandardOutput))
+            cancellationToken);
+        var gitDirectoryTask = reader.GetGitDirectoryAsync(repositoryPath, cancellationToken);
+        await Task.WhenAll(headTask, baselineTask, configTask, gitDirectoryTask).ConfigureAwait(false);
+
+        var head = GitRepositoryReader.FirstOutputLine(await headTask.ConfigureAwait(false));
+        var baseline = await baselineTask.ConfigureAwait(false);
+        var configResult = await configTask.ConfigureAwait(false);
+        var gitDirectory = await gitDirectoryTask.ConfigureAwait(false);
+        if (head == null || baseline == null || gitDirectory == null ||
+            !configResult.Succeeded || string.IsNullOrWhiteSpace(configResult.StandardOutput))
         {
             return null;
         }
 
-        var gitDirectory = await reader.GetGitDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        if (gitDirectory == null)
-        {
-            return null;
-        }
-
-        var target = await new GitSvnTargetResolver(runner).ResolveAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-        if (!target.IsResolved)
+        var commitsTask = reader.GetPendingCommitsAsync(repositoryPath, baseline, cancellationToken);
+        var targetTask = new GitSvnTargetResolver(runner)
+            .ResolveUrlAsync(repositoryPath, configResult.StandardOutput, cancellationToken);
+        await Task.WhenAll(commitsTask, targetTask).ConfigureAwait(false);
+        var commits = await commitsTask.ConfigureAwait(false);
+        var target = await targetTask.ConfigureAwait(false);
+        if (commits.Count == 0 || !target.IsResolved)
         {
             return null;
         }

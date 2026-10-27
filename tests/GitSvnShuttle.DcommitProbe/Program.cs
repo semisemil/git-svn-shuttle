@@ -1,13 +1,19 @@
 using GitSvnShuttle.Core;
 
-if (args.Length < 2)
+if (args.Length < 2 || (args[1] == "--startup-options-only" && args.Length != 3))
 {
     Console.Error.WriteLine("Usage: GitSvnShuttle.DcommitProbe <git.exe> <repository> [repository...]");
+    Console.Error.WriteLine("   or: GitSvnShuttle.DcommitProbe <git.exe> --startup-options-only <repository-with-pending-commit>");
     return 2;
 }
 
 var runner = new ProcessGitCommandRunner(args[0]);
 var service = new GitSvnWorkspaceService(runner);
+if (args.Length == 3 && args[1] == "--startup-options-only")
+{
+    await VerifyStartupOptionsAsync(args[2]);
+    return 0;
+}
 var repositories = args.Skip(1).ToArray();
 var before = new Dictionary<string, (string Branch, string Head)>(StringComparer.OrdinalIgnoreCase);
 var snapshots = new List<GitSvnPublishSnapshot>();
@@ -36,6 +42,7 @@ foreach (var repository in repositories)
     var inspection = await service.InspectAsync(repository, CancellationToken.None);
     Require(inspection.IsReady, repository + ": repository is not ready after rebase");
     Require(inspection.PendingCommits.Count > 0, repository + ": no pending commit before dcommit");
+    if (repository == repositories[0]) await VerifyStartupOptionsAsync(repository);
 
     var branch = await RunRequiredAsync(repository, "symbolic-ref", "--quiet", "--short", "HEAD");
     var head = await RunRequiredAsync(repository, "rev-parse", "--verify", "HEAD");
@@ -91,6 +98,36 @@ foreach (var file in untrackedFiles)
 Console.WriteLine("UNTRACKED_FILES_PRESERVED=PASS");
 
 return 0;
+
+async Task VerifyStartupOptionsAsync(string repository)
+{
+    var head = await RunRequiredAsync(repository, "rev-parse", "HEAD");
+    Require(head != await RunRequiredAsync(repository, "log", "--first-parent", "--grep=git-svn-id:", "--format=%H", "-1"),
+        "startup option probe requires a pending Git-SVN commit");
+    var status = await RunRequiredAsync(repository, "status", "--porcelain=v1");
+    var configPath = Path.GetFullPath(Path.Combine(repository,
+        await RunRequiredAsync(repository, "rev-parse", "--git-path", "shuttle-options-" + Guid.NewGuid().ToString("N") + ".config")));
+    File.WriteAllText(configPath, "[SVN]\nDryRun\n");
+    try
+    {
+        var included = await RunRequiredAsync(repository, "-c", "include.path=" + configPath, "svn", "dcommit");
+        Require(included.Contains("diff-tree ", StringComparison.Ordinal), "included valueless boolean was not applied");
+        var overridden = await RunRequiredAsync(repository, "-c", "svn.dryrun=false", "svn", "dcommit", "--dry-run");
+        Require(overridden.Contains("diff-tree ", StringComparison.Ordinal), "command-line dry-run did not override configuration");
+        var conversion = await runner.RunAsync(repository,
+            ["-c", "svn.logwindowsize=not-a-number", "config", "--int", "--get", "svn.logwindowsize"], CancellationToken.None);
+        Require(!conversion.Succeeded && conversion.StandardError.Length > 0, "invalid integer did not produce a native Git diagnostic");
+        var invalid = await runner.RunAsync(repository,
+            ["-c", "svn.logwindowsize=not-a-number", "svn", "dcommit", "--dry-run"], CancellationToken.None);
+        Require(invalid.Succeeded && invalid.StandardOutput.Contains("diff-tree ", StringComparison.Ordinal),
+            "invalid optional integer changed Git-SVN's existing fallback");
+        Require(invalid.StandardError == conversion.StandardError, "Git-SVN did not retain Git's integer diagnostic");
+        Require(head == await RunRequiredAsync(repository, "rev-parse", "HEAD"), "startup option checks changed HEAD");
+        Require(status == await RunRequiredAsync(repository, "status", "--porcelain=v1"), "startup option checks changed worktree state");
+    }
+    finally { File.Delete(configPath); }
+    Console.WriteLine("GIT_SVN_STARTUP_OPTIONS=PASS");
+}
 
 async Task AddUntrackedFileAsync(string repository)
 {

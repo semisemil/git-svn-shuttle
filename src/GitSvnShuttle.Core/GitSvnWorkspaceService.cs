@@ -92,6 +92,11 @@ public sealed class GitSvnWorkspaceService
         CancellationToken cancellationToken) =>
         publish.ValidatePublishSnapshotAsync(snapshot, cancellationToken);
 
+    public Task<bool> ValidatePublishSnapshotsAsync(
+        IReadOnlyList<GitSvnPublishSnapshot> snapshots,
+        CancellationToken cancellationToken) =>
+        publish.ValidatePublishSnapshotsAsync(snapshots, cancellationToken);
+
     public Task<IReadOnlyList<OperationResult>> DcommitPreparedAllAsync(
         IReadOnlyList<GitSvnPublishSnapshot> snapshots,
         CancellationToken cancellationToken) =>

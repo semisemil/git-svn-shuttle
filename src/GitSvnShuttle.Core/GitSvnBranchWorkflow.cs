@@ -63,7 +63,7 @@ internal sealed class GitSvnBranchWorkflow
 
         if (request.SwitchToBranch)
         {
-            var preflight = await reader.PreflightAsync(repositoryPath, requirePendingCommits: false, cancellationToken).ConfigureAwait(false);
+            var preflight = await reader.PreflightAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
             if (!preflight.Succeeded) return preflight;
         }
 

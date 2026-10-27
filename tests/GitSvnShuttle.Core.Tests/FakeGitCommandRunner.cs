@@ -8,6 +8,7 @@ internal sealed class FakeGitCommandRunner : IGitCommandRunner
 
     public List<(string WorkingDirectory, string Arguments)> Calls { get; } = new();
     public Func<string, string, GitCommandResult>? Responder { get; set; }
+    public Func<string, string, CancellationToken, Task<GitCommandResult>>? AsyncResponder { get; set; }
     public Func<string, string, Exception?>? ExceptionFactory { get; set; }
 
     public void Enqueue(int exitCode = 0, string output = "", string error = "") =>
@@ -20,11 +21,19 @@ internal sealed class FakeGitCommandRunner : IGitCommandRunner
     {
         cancellationToken.ThrowIfCancellationRequested();
         var joinedArguments = string.Join(" ", arguments);
-        Calls.Add((workingDirectory, joinedArguments));
+        lock (Calls)
+        {
+            Calls.Add((workingDirectory, joinedArguments));
+        }
         var exception = ExceptionFactory?.Invoke(workingDirectory, joinedArguments);
         if (exception != null)
         {
             throw exception;
+        }
+
+        if (AsyncResponder != null)
+        {
+            return AsyncResponder(workingDirectory, joinedArguments, cancellationToken);
         }
 
         if (Responder != null)

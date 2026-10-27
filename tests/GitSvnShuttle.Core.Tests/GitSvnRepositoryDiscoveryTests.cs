@@ -109,8 +109,9 @@ public sealed class GitSvnRepositoryDiscoveryTests : IDisposable
                 : new GitCommandResult(1, string.Empty, string.Empty),
             "--no-optional-locks status --porcelain=v1 --untracked-files=no" => Success(string.Empty),
             "rev-parse --git-dir" => Success(Path.Combine(repository, ".git")),
+            "rev-parse --show-prefix --git-path svn" => new GitCommandResult(1, string.Empty, "No local SVN metadata"),
             "log --first-parent --grep=git-svn-id: --format=%H -1" => Success("baseline"),
-            "svn info" => Success("URL: https://svn.example.test/trunk\nRevision: 42"),
+            "svn info --url" => Success("https://svn.example.test/trunk"),
             "config --get-regexp ^(svn\\.|svn-remote\\.)" =>
                 Success("svn-remote.svn.url https://svn.example.test\nsvn-remote.svn.fetch trunk:refs/remotes/git-svn"),
             _ when arguments.StartsWith("show -s ", StringComparison.Ordinal) =>

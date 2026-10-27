@@ -85,9 +85,9 @@ public sealed class SecurityBoundaryTests
                         return Success("svn-remote.svn.url https://svn.example.test/demo/trunk");
                     }
 
-                    if (arguments == "svn info")
+                    if (arguments == "svn info --url")
                     {
-                        return Success("URL: https://svn.example.test/demo/trunk\nRevision: 42");
+                        return Success("https://svn.example.test/demo/trunk");
                     }
 
                     if (arguments == "config --get-regexp ^(svn\\.|svn-remote\\.)")
